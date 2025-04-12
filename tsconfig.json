@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "ES5",
+    "module": "esnext",
+    "moduleResolution": "node",
+    "strict": true,
+    "lib": ["esnext", "dom"],
+    "strictPropertyInitialization":false,
+    "strictNullChecks": false,
+    "verbatimModuleSyntax": true
+  },
+  "exclude": ["node_modules", "demo"]
+}
