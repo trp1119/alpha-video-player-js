@@ -85,4 +85,4 @@ const player = new AlphaVideoPlayerJs(config)
 
 ## 示例
 
-https://test-web.bxyuer.com/alpha-video-player-js-demo
+https://trp1119.github.io/alpha-video-player-js-demo

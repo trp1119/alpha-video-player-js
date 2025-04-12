@@ -1,6 +1,6 @@
 {
   "name": "alpha-video-player-js",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Web 视频动画特效播放 sdk",
   "main": "dist/alpha-video-player-js.js",
   "types": "dist/alpha-video-player-js.d.ts",
@@ -24,6 +24,7 @@
     "type": "git",
     "url": "https://git.yupaopao.com/terminal/fe/infrastructure/alpha-video-player-js"
   },
+  "homepage": "https://trp1119.github.io/alpha-video-player-js-demo",
   "files": [
     "dist",
     "package.json"
