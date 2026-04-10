@@ -2,7 +2,8 @@ interface IConfig {
     container: HTMLElement;
     width?: number;
     height?: number;
-    src: string;
+    src?: string;
+    crossOrigin?: 'anonymous' | 'use-credentials';
     muted?: boolean;
     loop?: boolean;
     playbackRate?: number;
@@ -25,7 +26,7 @@ interface IConfig {
     onError?: (e: ErrorEvent) => void;
     onDestroy?: () => void;
 }
-type IOptionalConfig = Omit<IConfig, 'container' | 'src'> & Partial<Pick<IConfig, 'container' | 'src'>>;
+type IOptionalConfig = Omit<IConfig, 'container'> & Partial<Pick<IConfig, 'container'>>;
 type IOrientation = 'landscape' | 'portrait';
 type ISide = 'front' | 'back';
 

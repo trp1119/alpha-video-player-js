@@ -54,9 +54,9 @@ export default class CanvasRender extends Video {
     const imageData = image.data
     // 获取 alpha 视频图片数据
     const alphaData = tempContext2d.getImageData(...alhpaImageCoords).data
-    // 替换 alpha 通道
+    // 替换 alpha 通道（取 R 通道，与 WebGL shader 一致）
     for (let i = 3; i < imageData.length; i += 4) {
-      imageData[i] = alphaData[i - 1]
+      imageData[i] = alphaData[i - 3]
     }
     // 将处理后的图片数据放回画布
     context2d.putImageData(image, 0, 0)
@@ -85,8 +85,7 @@ export default class CanvasRender extends Video {
     const {canvas } = this
     if (!canvas) return
     super.destroy()
-    // 清除 dom
-    canvas.parentNode.removeChild(canvas)
+    canvas.parentNode?.removeChild(canvas)
     // 释放内存
     this.canvas = null
     this.context2d = null

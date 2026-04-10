@@ -1,7 +1,7 @@
 import type { IConfig, IOptionalConfig } from '../type'
-import { initCanvas, videoExists, requestAnimationFrame, cancelAnimationFrame } from '../util'
+import { initCanvas, videoExists, getRequestAnimationFrame, getCancelAnimationFrame } from '../util'
 
-const DEFULT_CONFIG: Omit<IConfig, 'container' | 'src'> = {
+const DEFAULT_CONFIG: Omit<IConfig, 'container' | 'src'> = {
   playbackRate: 1,
   muted: true,
   loop: false,
@@ -34,15 +34,12 @@ export default class Video {
     if (!config.container || !config.src) {
       throw new Error('[alpha-video-player-js]: container or src can not be empty！')
     }
-    // 合并配置项
     this.setConfig(config)
     this.container = config.container
-    // 创建画布
     this.canvas = initCanvas(this.container, config.width, config.height)
     const { width, height } = this.canvas
     this.canvasWidth = width
     this.canvasHeight = height
-    // 初始化视频
     this.initVideo()
   }
 
@@ -50,55 +47,39 @@ export default class Video {
     return this.video?.loop || false
   }
 
-  /**
-   * 设置配置
-   */
   private setConfig (config: IConfig | IOptionalConfig) {
     if (!config) return
-    this.config = Object.assign({
-      playbackRate: 1,
-      muted: true,
-      loop: false,
-      fps: 0,
-      orientation: 'landscape',
-      side: 'front',
-      autoShow: false,
-      autoClear: true,
-      autoDestroy: false,
-      debug: false,
-      videoFrame: false,
-    }, this.config || {}, config) as IConfig
+    this.config = Object.assign({}, DEFAULT_CONFIG, this.config || {}, config) as IConfig
   }
 
-  /**
-   * 初始化视频
-   */
   private initVideo () {
-    const { src, playbackRate, muted, loop } = this.config
+    const { src, playbackRate, muted, loop, crossOrigin } = this.config
   
     const video = this.video = document.createElement('video')
     video.src = src
-    video.crossOrigin = 'anonymous'
+    video.crossOrigin = crossOrigin ?? 'anonymous'
     video.autoplay = false
     video.preload = 'auto'
     video.playbackRate = playbackRate
     video.loop = loop
     video.muted = muted
+    if (muted) {
+      video.setAttribute('muted', '')
+    }
 
     video.setAttribute('playsinline', '')
     video.setAttribute('webkit-playsinline', '')
     video.setAttribute('x-webkit-airplay', '')
-    video.style.position = 'fixed'
-    video.style.width = '1px'
-    video.style.height = '1px'
-    video.style.opacity = '0'
-    video.style.left = '-9999px'
+    video.style.position = 'absolute'
+    video.style.width = '0'
+    video.style.height = '0'
+    video.style.overflow = 'hidden'
+    video.style.pointerEvents = 'none'
     document.body.appendChild(video)
-  
-    video.load()
 
     this.bindInstance()
     this.addEvent()
+    video.load()
   }
   /**
    * 绘制一帧
@@ -118,15 +99,16 @@ export default class Video {
 
   private initAdaptAnimation () {
     const { videoFrame, fps } = this.config
+    const rAF = getRequestAnimationFrame()
 
     if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && videoFrame) {
       return (cb: Function) => this.video.requestVideoFrameCallback(cb as VideoFrameRequestCallback)
-    } else if (requestAnimationFrame) {
+    } else if (rAF) {
       if (fps) {
         let frame = -1
         return (cb: Function) => {
           frame++
-          return requestAnimationFrame(() => {
+          return rAF(() => {
             if (frame % (60 / fps) === 0) {
               return cb()
             } else {
@@ -135,10 +117,11 @@ export default class Video {
           })
         }
       } else {
-        return (cb: Function) => requestAnimationFrame(cb as FrameRequestCallback)
+        return (cb: Function) => rAF(cb as FrameRequestCallback)
       }
     } else {
-      return (cb: Function) => window.setTimeout(cb, 1000 / fps)
+      const interval = fps > 0 ? 1000 / fps : 16
+      return (cb: Function) => window.setTimeout(cb, interval)
     }
   }
 
@@ -151,10 +134,11 @@ export default class Video {
       return
     }
 
-    if (this.video.cancelVideoFrameCallback && config.videoFrame) {
+    const cAF = getCancelAnimationFrame()
+    if (this.video?.cancelVideoFrameCallback && config.videoFrame) {
       this.video.cancelVideoFrameCallback(animationId)
-    } else if (cancelAnimationFrame) {
-      cancelAnimationFrame(animationId)
+    } else if (cAF) {
+      cAF(animationId)
     } else {
       window.clearTimeout(animationId)
     }
@@ -174,7 +158,12 @@ export default class Video {
       this.drawFrame()
       return res
     } catch (error) {
-      throw new Error(`[alpha-video-player-js]: play failed, error: ${error}`)
+      const errorEvent = new ErrorEvent('error', {
+        message: `[alpha-video-player-js]: play failed, error: ${error}`,
+        error,
+      })
+      this.config.onError?.(errorEvent)
+      throw errorEvent
     }
   }
   /**
@@ -199,6 +188,8 @@ export default class Video {
   public setSrc (src: string) {
     videoExists(this.video)
   
+    this.canPlay = false
+    this.onCanPlayTimes = 1
     this.video.src = src
     this.video.load()
     this.video.currentTime = 0
@@ -211,7 +202,6 @@ export default class Video {
 
     this.video.currentTime = time
   }
-  /*
   /**
    * 设置是否静音播放
    * @param muted 是否静音
@@ -220,6 +210,11 @@ export default class Video {
     videoExists(this.video)
   
     this.video.muted = muted
+    if (muted) {
+      this.video.setAttribute('muted', '')
+    } else {
+      this.video.removeAttribute('muted')
+    }
   }
   /**
    * 设置是否循环播放
@@ -295,8 +290,17 @@ export default class Video {
    * 视频播放出错触发
    */
   private onError (e: ErrorEvent) {
-    const { config } = this
-    config.onError && config.onError(e)
+    const { config, video } = this
+    if (config.debug && video?.error) {
+      const mediaError = video.error
+      console.error(
+        `[alpha-video-player-js] MediaError code: ${mediaError.code}, message: ${mediaError.message || 'N/A'}.`,
+        mediaError.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
+          ? 'If the video is cross-origin, ensure the server returns "Access-Control-Allow-Origin" header.'
+          : ''
+      )
+    }
+    config.onError?.(e)
     this.destroy()
   }
   /**
@@ -305,23 +309,25 @@ export default class Video {
   protected destroy () {
     try {
       const { config } = this    
-      // 取消逐帧绘制
       this.cancelDrawFrame()
-      // 取消事件监听
       this.removeEvent()
-      // 清除 dom
-      this.video.pause()
-      this.video.src = ''
-      this.video.load()
-      this.video.parentNode.removeChild(this.video)
+      if (this.video) {
+        this.video.pause()
+        this.video.src = ''
+        this.video.load()
+        this.video.parentNode?.removeChild(this.video)
+      }
       
-      config.onDestroy && config.onDestroy()
-      // 释放内存
+      config?.onDestroy?.()
       this.config = null
       this.container = null
       this.video = null
       this.animationId = null
-    } catch (e) {}
+    } catch (e) {
+      if (this.config?.debug) {
+        console.error('[alpha-video-player-js] destroy error:', e)
+      }
+    }
   }
   /**
    * 绑定实例

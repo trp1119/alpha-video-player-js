@@ -30,8 +30,8 @@ export default class WebGLRender extends Video {
     const { canvas } = this
     const gl = this.gl = canvas.getContext('webgl') || (canvas.getContext('experimental-webgl') as WebGLRenderingContext)
 
-    gl.disable(gl.BLEND);
-    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.enable(gl.BLEND)
+    gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
     gl.viewport(0, 0, canvas.width, canvas.height)
 
   
@@ -188,8 +188,7 @@ export default class WebGLRender extends Video {
     const { canvas, gl, vertexShader, fragmentShader, texture, vertexBuffer, program } = this
     if (!canvas || !gl) return
     super.destroy()
-    // 清除 dom
-    canvas.parentNode.removeChild(canvas)
+    canvas.parentNode?.removeChild(canvas)
     // 分离着色器对象
     gl.detachShader(program, vertexShader)
     // 删除着色器对象
