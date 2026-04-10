@@ -52,6 +52,28 @@ export const initCanvas = (container: HTMLElement, width?: number, height?: numb
   return canvas
 }
 
+/**
+ * 根据视频原始尺寸和 orientation 计算显示区域宽高比。
+ * alpha 视频中，landscape 时左右各半（实际宽 = videoWidth / 2），
+ * portrait 时上下各半（实际高 = videoHeight / 2）。
+ */
+export const computeDisplayRatio = (videoWidth: number, videoHeight: number, orientation: IOrientation) => {
+  const displayWidth = orientation === 'landscape' ? videoWidth / 2 : videoWidth
+  const displayHeight = orientation === 'portrait' ? videoHeight / 2 : videoHeight
+  return displayWidth / displayHeight
+}
+
+/**
+ * 重新设置 canvas 的像素尺寸（不改变 CSS 尺寸和 DOM 结构）
+ */
+export const resizeCanvas = (canvas: HTMLCanvasElement, width: number, height: number) => {
+  const dpr = getDpr()
+  canvas.width = width * dpr
+  canvas.height = height * dpr
+  canvas.style.width = width + 'px'
+  canvas.style.height = height + 'px'
+}
+
 const DEFINE_COORDS: ICoords = {
   landscape: {
     front: [
@@ -130,9 +152,9 @@ const IMAGE_COORDS_MAP: Record<string, (w: number, h: number) => IImageCoords> =
 export const computeImageCoord = (orientation: IOrientation, side: ISide, width: number, height: number) => {
   const otherSide: ISide = side === 'front' ? 'back' : 'front'
   const imageCoords = IMAGE_COORDS_MAP[`${orientation}_${side}`](width, height)
-  const alhpaImageCoords = IMAGE_COORDS_MAP[`${orientation}_${otherSide}`](width, height)
+  const alphaImageCoords = IMAGE_COORDS_MAP[`${orientation}_${otherSide}`](width, height)
 
-  return { imageCoords, alhpaImageCoords }
+  return { imageCoords, alphaImageCoords }
 }
 
 /**

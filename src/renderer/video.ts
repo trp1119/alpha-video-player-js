@@ -1,5 +1,5 @@
 import type { IConfig, IOptionalConfig } from '../type'
-import { initCanvas, videoExists, getRequestAnimationFrame, getCancelAnimationFrame } from '../util'
+import { initCanvas, resizeCanvas, computeDisplayRatio, getDpr, videoExists, getRequestAnimationFrame, getCancelAnimationFrame } from '../util'
 
 const DEFAULT_CONFIG: Omit<IConfig, 'container' | 'src'> = {
   playbackRate: 1,
@@ -11,15 +11,16 @@ const DEFAULT_CONFIG: Omit<IConfig, 'container' | 'src'> = {
   autoShow: false,
   autoClear: true,
   autoDestroy: false,
+  autoResize: 'contain',
   debug: false,
   videoFrame: false,
 }
 
 export default class Video {
-  protected config: IConfig
-  protected container: HTMLElement
-  protected video: HTMLVideoElement
-  protected canvas: HTMLCanvasElement
+  protected config: IConfig | null
+  protected container: HTMLElement | null
+  protected video: HTMLVideoElement | null
+  protected canvas: HTMLCanvasElement | null
   protected canvasWidth = 0
   protected canvasHeight = 0
   protected videoWidth = 0
@@ -31,8 +32,8 @@ export default class Video {
   public playing = false
 
   constructor (config: IConfig) {
-    if (!config.container || !config.src) {
-      throw new Error('[alpha-video-player-js]: container or src can not be empty！')
+    if (!config.container) {
+      throw new Error('[alpha-video-player-js]: container can not be empty！')
     }
     this.setConfig(config)
     this.container = config.container
@@ -40,7 +41,9 @@ export default class Video {
     const { width, height } = this.canvas
     this.canvasWidth = width
     this.canvasHeight = height
-    this.initVideo()
+    if (config.src) {
+      this.initVideo()
+    }
   }
 
   public get loop () {
@@ -158,12 +161,8 @@ export default class Video {
       this.drawFrame()
       return res
     } catch (error) {
-      const errorEvent = new ErrorEvent('error', {
-        message: `[alpha-video-player-js]: play failed, error: ${error}`,
-        error,
-      })
-      this.config.onError?.(errorEvent)
-      throw errorEvent
+      this.config.onError?.(error)
+      throw error
     }
   }
   /**
@@ -186,10 +185,15 @@ export default class Video {
    * @param playbackRate 倍速
    */
   public setSrc (src: string) {
-    videoExists(this.video)
-  
     this.canPlay = false
     this.onCanPlayTimes = 1
+    this.config.src = src
+
+    if (!this.video) {
+      this.initVideo()
+      return
+    }
+
     this.video.src = src
     this.video.load()
     this.video.currentTime = 0
@@ -235,16 +239,51 @@ export default class Video {
     this.video.playbackRate = playbackRate
   }
   /**
-   * 视频加载完毕触发
+   * 视频加载完毕触发。
+   * 若配置了 autoResize，根据视频实际比例自动调整 canvas 尺寸。
    */
   protected onLoad () {
-    const { video, config } = this
-    const { videoWidth, videoHeight } = video
-    this.videoWidth = videoWidth
-    this.videoHeight = videoHeight
+    const { video, config, canvas } = this
+    this.videoWidth = video.videoWidth
+    this.videoHeight = video.videoHeight
+
+    if (config.autoResize && canvas && video.videoWidth > 0 && video.videoHeight > 0) {
+      const dpr = getDpr()
+      const videoRatio = computeDisplayRatio(video.videoWidth, video.videoHeight, config.orientation!)
+      const boxWidth = canvas.width / dpr
+      const boxHeight = canvas.height / dpr
+
+      let fixDimension: 'width' | 'height'
+      if (config.autoResize === 'width' || config.autoResize === 'height') {
+        fixDimension = config.autoResize
+      } else {
+        // contain: 视频比盒子更宽（ratio 更大）→ 以宽为准缩高；否则以高为准缩宽
+        const boxRatio = boxWidth / boxHeight
+        fixDimension = videoRatio >= boxRatio ? 'width' : 'height'
+      }
+
+      const newWidth = fixDimension === 'width' ? boxWidth : Math.round(boxHeight * videoRatio)
+      const newHeight = fixDimension === 'width' ? Math.round(boxWidth / videoRatio) : boxHeight
+
+      const targetW = newWidth * dpr
+      const targetH = newHeight * dpr
+      if (targetW !== this.canvasWidth || targetH !== this.canvasHeight) {
+        resizeCanvas(canvas, newWidth, newHeight)
+        this.canvasWidth = canvas.width
+        this.canvasHeight = canvas.height
+        this.onCanvasResized()
+      }
+    }
+
     config.onLoad && config.onLoad()
   }
-  
+
+  /**
+   * canvas 尺寸因 autoResize 发生变化后调用，
+   * 子类在此更新依赖尺寸的资源（gl.viewport / tempCanvas 等）。
+   */
+  protected onCanvasResized () {}
+
   /**
    * 视频能够播放触发
    */
@@ -289,16 +328,10 @@ export default class Video {
   /**
    * 视频播放出错触发
    */
-  private onError (e: ErrorEvent) {
+  private onError (e: Event) {
     const { config, video } = this
-    if (config.debug && video?.error) {
-      const mediaError = video.error
-      console.error(
-        `[alpha-video-player-js] MediaError code: ${mediaError.code}, message: ${mediaError.message || 'N/A'}.`,
-        mediaError.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED
-          ? 'If the video is cross-origin, ensure the server returns "Access-Control-Allow-Origin" header.'
-          : ''
-      )
+    if (config.debug) {
+      console.error(video?.error ?? e)
     }
     config.onError?.(e)
     this.destroy()
@@ -322,7 +355,7 @@ export default class Video {
       this.config = null
       this.container = null
       this.video = null
-      this.animationId = null
+      this.animationId = 0
     } catch (e) {
       if (this.config?.debug) {
         console.error('[alpha-video-player-js] destroy error:', e)
@@ -357,7 +390,8 @@ export default class Video {
    * 取消监听 video 事件
    */
   private removeEvent () {
-    let { video, onLoad, onCanplay, onPlay, onPause, onEnded, onError } = this
+    const { video, onLoad, onCanplay, onPlay, onPause, onEnded, onError } = this
+    if (!video) return
     video.removeEventListener('loadedmetadata', onLoad)
     video.removeEventListener('play', onPlay)
     video.removeEventListener('canplaythrough', onCanplay)

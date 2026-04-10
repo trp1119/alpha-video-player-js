@@ -3,6 +3,7 @@ interface IConfig {
     width?: number;
     height?: number;
     src?: string;
+    /** 跨域视频资源；默认 anonymous */
     crossOrigin?: 'anonymous' | 'use-credentials';
     muted?: boolean;
     loop?: boolean;
@@ -15,6 +16,14 @@ interface IConfig {
     autoShow?: boolean;
     autoClear?: boolean;
     autoDestroy?: boolean;
+    /**
+     * 视频加载后按比例自适应 canvas 尺寸（默认 'contain'）。
+     * - 'contain'：自动判断，确保视频完整填入 canvas 盒子（类似 object-fit: contain）
+     * - 'width'：固定宽度，按视频比例自动调整高度
+     * - 'height'：固定高度，按视频比例自动调整宽度
+     * - false：不自适应，canvas 保持初始尺寸
+     */
+    autoResize?: 'width' | 'height' | 'contain' | false;
     onInitSuccess?: () => void;
     onInitError?: (e: ErrorEvent) => void;
     onLoad?: () => void;
@@ -23,10 +32,11 @@ interface IConfig {
     onLoop?: () => void;
     onPause?: () => void;
     onEnded?: () => void;
-    onError?: (e: ErrorEvent) => void;
+    /** 媒体 error 事件或 play() 拒绝等，原样传入 */
+    onError?: (e: unknown) => void;
     onDestroy?: () => void;
 }
-type IOptionalConfig = Omit<IConfig, 'container'> & Partial<Pick<IConfig, 'container'>>;
+type IOptionalConfig = Omit<IConfig, 'container' | 'src'> & Partial<Pick<IConfig, 'container' | 'src'>>;
 type IOrientation = 'landscape' | 'portrait';
 type ISide = 'front' | 'back';
 

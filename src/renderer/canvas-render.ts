@@ -3,12 +3,12 @@ import { computeSize, computeImageCoord } from '../util'
 import type { IConfig, IImageCoords } from '../type'
 
 export default class CanvasRender extends Video {
-  private context2d: CanvasRenderingContext2D
-  private tempContext2d: CanvasRenderingContext2D
-  private tempCanvasWidth: number
-  private tempCanvasHeight: number
-  private imageCoords: IImageCoords
-  private alhpaImageCoords: IImageCoords
+  private context2d: CanvasRenderingContext2D | null
+  private tempContext2d: CanvasRenderingContext2D | null
+  private tempCanvasWidth: number | null
+  private tempCanvasHeight: number | null
+  private imageCoords: IImageCoords | null
+  private alphaImageCoords: IImageCoords | null
 
   constructor (config: IConfig) {
     const { onInitSuccess, onInitError } = config
@@ -18,7 +18,11 @@ export default class CanvasRender extends Video {
 
       onInitSuccess && onInitSuccess()
     } catch (e: any) {
-      onInitError && onInitError(e)
+      if (onInitError) {
+        onInitError(e)
+      } else {
+        throw e
+      }
     }
   }
   /**
@@ -32,20 +36,33 @@ export default class CanvasRender extends Video {
     this.tempCanvasWidth = tempCanvas.width = computeSize(orientation, 'width', canvasWidth)
     this.tempCanvasHeight = tempCanvas.height = computeSize(orientation, 'height', canvasHeight)
     // 计算画布图片渲染位置
-    const { imageCoords, alhpaImageCoords } = computeImageCoord(orientation, side, canvasWidth, canvasHeight)
+    const { imageCoords, alphaImageCoords } = computeImageCoord(orientation, side, canvasWidth, canvasHeight)
     this.imageCoords = imageCoords
-    this.alhpaImageCoords = alhpaImageCoords
+    this.alphaImageCoords = alphaImageCoords
 
     this.context2d = canvas.getContext('2d')
     this.tempContext2d = tempCanvas.getContext('2d')
   }
+  protected onCanvasResized () {
+    const { canvasWidth, canvasHeight, config } = this
+    const { orientation, side } = config
+    const tempCanvas = document.createElement('canvas')
+    this.tempCanvasWidth = tempCanvas.width = computeSize(orientation, 'width', canvasWidth)
+    this.tempCanvasHeight = tempCanvas.height = computeSize(orientation, 'height', canvasHeight)
+    const { imageCoords, alphaImageCoords } = computeImageCoord(orientation, side, canvasWidth, canvasHeight)
+    this.imageCoords = imageCoords
+    this.alphaImageCoords = alphaImageCoords
+    this.context2d = this.canvas.getContext('2d')
+    this.tempContext2d = tempCanvas.getContext('2d')
+  }
+
   /**
    * 绘制一帧
    */
   protected drawFrameOnce () {
-    const { context2d, tempContext2d, video, canPlay, videoWidth, videoHeight, tempCanvasWidth, tempCanvasHeight, imageCoords, alhpaImageCoords } = this
+    const { context2d, tempContext2d, video, canPlay, videoWidth, videoHeight, tempCanvasWidth, tempCanvasHeight, imageCoords, alphaImageCoords } = this
 
-    if (!context2d || !tempContext2d || !video || !canPlay || !videoWidth || !videoHeight || !tempCanvasWidth || !tempCanvasHeight || !imageCoords || !alhpaImageCoords) return
+    if (!context2d || !tempContext2d || !video || !canPlay || !videoWidth || !videoHeight || !tempCanvasWidth || !tempCanvasHeight || !imageCoords || !alphaImageCoords) return
 
     // 获取当前帧视频并进行缩放
     tempContext2d.drawImage(video, 0, 0, videoWidth, videoHeight, 0, 0, tempCanvasWidth, tempCanvasHeight)
@@ -53,7 +70,7 @@ export default class CanvasRender extends Video {
     const image = tempContext2d.getImageData(...imageCoords)
     const imageData = image.data
     // 获取 alpha 视频图片数据
-    const alphaData = tempContext2d.getImageData(...alhpaImageCoords).data
+    const alphaData = tempContext2d.getImageData(...alphaImageCoords).data
     // 替换 alpha 通道（取 R 通道，与 WebGL shader 一致）
     for (let i = 3; i < imageData.length; i += 4) {
       imageData[i] = alphaData[i - 3]
@@ -93,6 +110,6 @@ export default class CanvasRender extends Video {
     this.tempCanvasWidth = null
     this.tempCanvasHeight = null
     this.imageCoords = null
-    this.alhpaImageCoords = null
+    this.alphaImageCoords = null
   }
 }

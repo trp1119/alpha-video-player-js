@@ -5,12 +5,12 @@ import type { IConfig } from '../type'
 import Video from './video'
 
 export default class WebGLRender extends Video {
-  private gl: WebGLRenderingContext
-  private vertexShader: WebGLShader
-  private fragmentShader: WebGLShader
-  private program: WebGLProgram
-  private texture: WebGLTexture
-  private vertexBuffer: WebGLBuffer
+  private gl: WebGLRenderingContext | null
+  private vertexShader: WebGLShader | null
+  private fragmentShader: WebGLShader | null
+  private program: WebGLProgram | null
+  private texture: WebGLTexture | null
+  private vertexBuffer: WebGLBuffer | null
 
   constructor (config: IConfig) {
     const { onInitSuccess, onInitError } = config
@@ -20,7 +20,11 @@ export default class WebGLRender extends Video {
 
       onInitSuccess && onInitSuccess()
     } catch (e: any) {
-      onInitError && onInitError(e)
+      if (onInitError) {
+        onInitError(e)
+      } else {
+        throw e
+      }
     }
   }
   /**
@@ -150,6 +154,12 @@ export default class WebGLRender extends Video {
 
     return vertexBuffer
   }
+  protected onCanvasResized () {
+    const { gl, canvas } = this
+    if (!gl || !canvas) return
+    gl.viewport(0, 0, canvas.width, canvas.height)
+  }
+
   /**
    * 绘制一帧
    */
