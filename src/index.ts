@@ -25,8 +25,8 @@ export default class Render {
     return this.render.loop
   }
 
-  public play (config?: IOptionalConfig) {
-    this.render.play(config)
+  public async play (config?: IOptionalConfig) {
+    return this.render.play(config)
   }
   
 

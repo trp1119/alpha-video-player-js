@@ -34,7 +34,7 @@ declare class Render {
     constructor(config: IConfig);
     get playing(): boolean;
     get loop(): boolean;
-    play(config?: IOptionalConfig): void;
+    play(config?: IOptionalConfig): Promise<void>;
     pause(): void;
     destroy(): void;
     reset(): void;
@@ -45,4 +45,5 @@ declare class Render {
     setPlaybackRate(playbackRate: number): void;
 }
 
-export { type IConfig, Render as default };
+export { Render as default };
+export type { IConfig };

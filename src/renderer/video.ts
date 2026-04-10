@@ -88,7 +88,11 @@ export default class Video {
     video.setAttribute('playsinline', '')
     video.setAttribute('webkit-playsinline', '')
     video.setAttribute('x-webkit-airplay', '')
-    video.style.display = 'none'
+    video.style.position = 'fixed'
+    video.style.width = '1px'
+    video.style.height = '1px'
+    video.style.opacity = '0'
+    video.style.left = '-9999px'
     document.body.appendChild(video)
   
     video.load()
@@ -161,13 +165,17 @@ export default class Video {
   /**
    * 播放
    */
-  public play (config?: IOptionalConfig) {
+  public async play (config?: IOptionalConfig) {
     videoExists(this.video)
-
     config && this.setConfig(config)
   
-    this.video.play()
-    this.drawFrame()
+    try {
+      const res = await this.video.play()
+      this.drawFrame()
+      return res
+    } catch (error) {
+      throw new Error(`[alpha-video-player-js]: play failed, error: ${error}`)
+    }
   }
   /**
    * 暂停播放
