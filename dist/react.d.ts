@@ -1,3 +1,5 @@
+import React from 'react';
+
 interface IConfig {
     container: HTMLElement;
     width?: number;
@@ -56,4 +58,48 @@ declare class Render {
     setPlaybackRate(playbackRate: number): void;
 }
 
-export { type IConfig, Render as default };
+interface AlphaVideoPlayerProps {
+    src?: string;
+    width?: number;
+    height?: number;
+    crossOrigin?: 'anonymous' | 'use-credentials';
+    muted?: boolean;
+    loop?: boolean;
+    playbackRate?: number;
+    fps?: number;
+    orientation?: IOrientation;
+    side?: ISide;
+    videoFrame?: boolean;
+    debug?: boolean;
+    autoShow?: boolean;
+    autoClear?: boolean;
+    autoDestroy?: boolean;
+    autoResize?: 'width' | 'height' | 'contain' | false;
+    onInitSuccess?: () => void;
+    onInitError?: (e: ErrorEvent) => void;
+    onLoad?: () => void;
+    onCanPlay?: () => void;
+    onPlay?: () => void;
+    onLoop?: () => void;
+    onPause?: () => void;
+    onEnded?: () => void;
+    onError?: (e: unknown) => void;
+    onDestroy?: () => void;
+    className?: string;
+    style?: React.CSSProperties;
+}
+interface AlphaVideoPlayerRef {
+    play: () => Promise<void> | undefined;
+    pause: () => void;
+    destroy: () => void;
+    reset: () => void;
+    setSrc: (src: string) => void;
+    setCurrentTime: (time: number) => void;
+    setMute: (muted: boolean) => void;
+    setLoop: (loop: boolean) => void;
+    setPlaybackRate: (rate: number) => void;
+    getPlayer: () => Render | null;
+}
+declare const AlphaVideoPlayer: React.ForwardRefExoticComponent<AlphaVideoPlayerProps & React.RefAttributes<AlphaVideoPlayerRef>>;
+
+export { type AlphaVideoPlayerProps, type AlphaVideoPlayerRef, AlphaVideoPlayer as default };

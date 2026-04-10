@@ -104,6 +104,118 @@ try {
 }
 ```
 
+## 框架组件
+
+除了 JS 版本外，还提供了 Vue 3、Vue 2（2.7+）、React 的封装组件，通过子路径导入：
+
+### Vue 3
+
+```ts
+import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
+```
+
+```html
+<template>
+  <AlphaVideoPlayer
+    ref="playerRef"
+    src="https://example.com/video.mp4"
+    :muted="true"
+    :loop="false"
+    orientation="landscape"
+    side="front"
+    @initSuccess="onReady"
+    @error="onError"
+  />
+</template>
+
+<script setup lang="ts">
+import { ref } from 'vue'
+import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
+
+const playerRef = ref()
+
+const onReady = () => {
+  playerRef.value?.play()
+}
+
+const onError = (e: unknown) => {
+  console.error(e)
+}
+</script>
+```
+
+### Vue 2（2.7+）
+
+```ts
+import AlphaVideoPlayer from 'alpha-video-player-js/vue2'
+```
+
+```html
+<template>
+  <AlphaVideoPlayer
+    ref="player"
+    src="https://example.com/video.mp4"
+    :muted="true"
+    orientation="landscape"
+    side="front"
+    @init-success="onReady"
+    @error="onError"
+  />
+</template>
+
+<script>
+import AlphaVideoPlayer from 'alpha-video-player-js/vue2'
+
+export default {
+  components: { AlphaVideoPlayer },
+  methods: {
+    onReady() {
+      this.$refs.player.play()
+    },
+    onError(e) {
+      console.error(e)
+    },
+  },
+}
+</script>
+```
+
+### React
+
+```tsx
+import { useRef } from 'react'
+import AlphaVideoPlayer from 'alpha-video-player-js/react'
+import type { AlphaVideoPlayerRef } from 'alpha-video-player-js/react'
+
+function App() {
+  const playerRef = useRef<AlphaVideoPlayerRef>(null)
+
+  return (
+    <AlphaVideoPlayer
+      ref={playerRef}
+      src="https://example.com/video.mp4"
+      muted
+      orientation="landscape"
+      side="front"
+      onInitSuccess={() => playerRef.current?.play()}
+      onError={(e) => console.error(e)}
+    />
+  )
+}
+```
+
+### 组件说明
+
+- **Props**：与 JS 版的配置项一一对应（去除 `container`，组件内部自动管理）。
+- **事件/回调**：
+  - Vue 3：`@initSuccess`、`@initError`、`@load`、`@canPlay`、`@play`、`@loop`、`@pause`、`@ended`、`@error`、`@destroy`
+  - Vue 2：`@init-success`、`@init-error`、`@load`、`@can-play`、`@play`、`@loop`、`@pause`、`@ended`、`@error`、`@destroy`
+  - React：`onInitSuccess`、`onInitError`、`onLoad`、`onCanPlay`、`onPlay`、`onLoop`、`onPause`、`onEnded`、`onError`、`onDestroy`
+- **实例方法**（通过 ref 调用）：`play()`、`pause()`、`destroy()`、`reset()`、`setSrc()`、`setCurrentTime()`、`setMute()`、`setLoop()`、`setPlaybackRate()`、`getPlayer()`
+- **响应式 props**：`src`、`muted`、`loop`、`playbackRate` 变更时自动同步到播放器实例。
+- **生命周期**：组件挂载时自动初始化，卸载时自动销毁。
+- **peerDependencies**：vue / react / react-dom 均为可选，只需安装你使用的框架。
+
 ## 原理
 
 - WebGLRender 使用 webgl texture 获取 video RGB 通道视频 和 Alpha 通道视频纹理，并在 shader 中进行自定义融合

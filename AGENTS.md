@@ -22,10 +22,18 @@
 
 ```
 src/
-├── index.ts                  # 库入口，门面类 Render
+├── index.ts                  # 库入口，门面类 Render（JS 版）
+├── vue3.ts                   # Vue 3 子入口
+├── vue2.ts                   # Vue 2 子入口
+├── react.ts                  # React 子入口
 ├── type.ts                   # 所有 TypeScript 类型定义
 ├── util.ts                   # 工具函数（能力检测、坐标计算、canvas 创建等）
 ├── glsl.d.ts                 # GLSL 文件模块声明
+├── vue2-shim.d.ts            # vue2 别名模块声明
+├── components/
+│   ├── vue3.ts               # Vue 3 组件（Composition API + defineComponent）
+│   ├── vue2.ts               # Vue 2.7+ 组件（Options API + as any 断言）
+│   └── react.tsx             # React 组件（forwardRef + hooks）
 ├── renderer/
 │   ├── video.ts              # 基类 Video：视频管理、帧循环、事件、生命周期
 │   ├── webgl-render.ts       # WebGL 渲染子类
@@ -35,6 +43,17 @@ src/
     └── fragment.glsl         # 片元着色器（RGB + Alpha 合成）
 ```
 
+### 产物结构
+
+```
+dist/
+├── alpha-video-player-js.js   # JS 核心（ESM）
+├── alpha-video-player-js.d.ts # JS 核心类型
+├── vue3.js / vue3.d.ts        # Vue 3 组件
+├── vue2.js / vue2.d.ts        # Vue 2 组件
+└── react.js / react.d.ts      # React 组件
+```
+
 ## 4. 类继承关系与模块依赖
 
 ```
@@ -42,6 +61,11 @@ Render（index.ts，门面 / 策略选择）
   ├── WebGLRender（webgl-render.ts）extends Video
   └── CanvasRender（canvas-render.ts）extends Video
         └── Video（video.ts，公共基类）
+
+框架组件 → 都依赖 Render（核心会被内联到各组件产物中）
+  ├── components/vue3.ts  → import Render from '../index'
+  ├── components/vue2.ts  → import Render from '../index'
+  └── components/react.tsx → import Render from '../index'
 
 type.ts ← 被所有模块引用
 util.ts ← 被 Video / WebGLRender / CanvasRender 引用
@@ -272,7 +296,12 @@ npm run build    # 生产构建（含 terser 压缩）
 npm run release  # 交互式发版（patch/minor/major → build → tag → publish）
 ```
 
-产物：`dist/alpha-video-player-js.js`（ESM）+ `dist/alpha-video-player-js.d.ts`
+产物：
+
+- `dist/alpha-video-player-js.js` + `.d.ts`（JS 核心）
+- `dist/vue3.js` + `.d.ts`（Vue 3 组件）
+- `dist/vue2.js` + `.d.ts`（Vue 2 组件）
+- `dist/react.js` + `.d.ts`（React 组件）
 
 ## 10. 常见修改场景指引
 
@@ -280,12 +309,21 @@ npm run release  # 交互式发版（patch/minor/major → build → tag → pub
 
 1. 在 `renderer/video.ts` 的 `Video` 类中添加方法实现
 2. 在 `index.ts` 的 `Render` 类中添加代理方法
+3. 在三个框架组件中补充对应的 expose / methods / imperativeHandle
 
 ### 新增配置项
 
 1. 在 `type.ts` 的 `IConfig` 接口中添加字段
 2. 若有默认值，在 `renderer/video.ts` 的 `DEFAULT_CONFIG` 中补充
 3. 在相应的渲染逻辑中消费该配置
+4. 在三个框架组件中补充对应的 props 和传参
+
+### 新增框架组件
+
+1. 在 `src/components/` 下新建组件文件
+2. 在 `src/` 下新建子入口（re-export）
+3. 在 `rollup.config.js` 的 `frameworkEntries` 中追加配置
+4. 在 `package.json` 的 `exports` 中追加子路径
 
 ### 修改渲染逻辑
 

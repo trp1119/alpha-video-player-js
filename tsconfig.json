@@ -5,9 +5,11 @@
     "moduleResolution": "node",
     "strict": true,
     "lib": ["esnext", "dom"],
-    "strictPropertyInitialization":false,
+    "strictPropertyInitialization": false,
     "strictNullChecks": false,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "jsx": "react",
+    "esModuleInterop": true
   },
   "exclude": ["node_modules", "demo"]
 }
