@@ -349,3 +349,12 @@ npm run release  # 交互式发版（patch/minor/major → build → tag → pub
 - **Canvas 2D 降级**：逐像素遍历性能远低于 WebGL，仅在 WebGL 不可用时启用。现代浏览器几乎全覆盖 WebGL。
 - **video 挂载位置**：隐藏 video 挂在 `document.body`（`width: 0; height: 0`），而非 container 内，避免受容器 CSS（overflow / transform 等）影响。销毁时通过 `parentNode?.removeChild` 清理，与挂载位置无关。
 - **destroy 后的空安全**：`destroy()` 将核心引用（`config`、`video`、`canvas`、GL 资源等）置 `null`，类型已标注 `| null`。销毁后不应再调用实例方法。
+
+## 12. Vue 组件（`alpha-video-player-js/vue3`）模板侧注意
+
+与 `components/vue3.ts` 的实现方式相关，接入业务或维护演示项目时需留意：
+
+- **数字类 props**：`playbackRate` 等在组件内声明为 `Number`。原生 `<input type="range">` 使用 `v-model` 时，浏览器侧常为**字符串**，会触发 Vue 运行时的 prop 类型告警。应使用 **`v-model.number`**，或对绑定值做 **`Number(...)`** 再传入。
+- **根节点与样式**：`setup` 的 `return` 仅为 `h('div', { ref: containerRef })`，**无业务 class**。需要绝对定位、与背景图对齐、响应式外壳等，应在**父级包裹元素**上写 class / style；画布逻辑尺寸仍通过 **`width` / `height` props** 传给组件（与 JS 版 `IConfig` 一致）。
+- **销毁后再初始化**：`expose` 的 `destroy()` 会清空内部 `player`，且 **`init` 仅在 `onMounted` 调用**。用户手动 `destroy()` 后，同一组件实例不会自动再次 `init`。需要「销毁后再播」时，应对组件使用 **`:key` 变化**或 **`v-if` 重挂**，以触发新的挂载周期。演示仓库 **`alpha-video-player-js-demo`** 的 `Item.vue` 使用 **`playerKey` + `:key`** 实现该流程。
+- **TypeScript 与 ref**：`defineComponent` + `expose` 的方法在部分 TS 版本下**不会**合并进 `InstanceType<typeof AlphaVideoPlayer>`，业务侧可为 ref 声明与 `expose` 一致的本地类型（演示中采用 `AlphaVideoPlayerExpose` 式接口）。

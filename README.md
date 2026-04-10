@@ -116,16 +116,24 @@ import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
 
 ```html
 <template>
-  <AlphaVideoPlayer
-    ref="playerRef"
-    src="https://example.com/video.mp4"
-    :muted="true"
-    :loop="false"
-    orientation="landscape"
-    side="front"
-    @initSuccess="onReady"
-    @error="onError"
-  />
+  <!-- 需要自定义定位/背景时，在外层包一层；组件根节点仅为无 class 的 div -->
+  <div class="player-wrap" :style="{ width: '250px', height: '133px' }">
+    <AlphaVideoPlayer
+      ref="playerRef"
+      src="https://example.com/video.mp4"
+      :width="250"
+      :height="133"
+      :muted="true"
+      :loop="false"
+      :playback-rate="playbackRate"
+      orientation="landscape"
+      side="front"
+      @initSuccess="onReady"
+      @error="onError"
+    />
+  </div>
+  <!-- 倍速滑块：须用 v-model.number，否则 range 会得到字符串，与 playbackRate 的 Number 类型不符 -->
+  <input v-model.number="playbackRate" type="range" min="0.5" max="2" step="0.5" />
 </template>
 
 <script setup lang="ts">
@@ -133,6 +141,7 @@ import { ref } from 'vue'
 import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
 
 const playerRef = ref()
+const playbackRate = ref(1)
 
 const onReady = () => {
   playerRef.value?.play()
@@ -206,7 +215,9 @@ function App() {
 
 ### 组件说明
 
-- **Props**：与 JS 版的配置项一一对应（去除 `container`，组件内部自动管理）。
+- **Props**：与 JS 版的配置项一一对应（去除 `container`，组件内部自动管理）。其中 **`playbackRate` 为 `number`**，在模板里绑定表单控件时勿传入字符串（例如 `<input type="range">` 配合 **`v-model.number`**，或 `:playback-rate="Number(x)"`）。
+- **根节点与布局**：组件只渲染一个**无业务 class** 的根 `div`；若需要与业务一致的绝对定位、背景图上的对齐等，请在**外层元素**上写样式，并通过 **`width` / `height` props**（及 `orientation` / `side` 等）控制画布与拼合逻辑。
+- **销毁后再次挂载**：调用 ref 上的 `destroy()` 后实例已清空，不会在同一次挂载中自动重新 `init`；需要再次初始化时，可对组件使用 **`:key` 递增**或 **`v-if` 切换**，以重新挂载（演示项目 `alpha-video-player-js-demo` 的 `Item.vue` 即采用 `:key` 方案）。
 - **事件/回调**：
   - Vue 3：`@initSuccess`、`@initError`、`@load`、`@canPlay`、`@play`、`@loop`、`@pause`、`@ended`、`@error`、`@destroy`
   - Vue 2：`@init-success`、`@init-error`、`@load`、`@can-play`、`@play`、`@loop`、`@pause`、`@ended`、`@error`、`@destroy`
