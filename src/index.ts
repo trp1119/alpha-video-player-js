@@ -3,7 +3,8 @@ import CanvasRender from './renderer/canvas-render'
 import { supportCanvas2d, supportWebGL } from './util'
 import type { IConfig, IOptionalConfig } from './type'
 
-export type { IConfig }
+export type { IConfig, IOptionalConfig }
+export type { IOrientation, ISide } from './type'
 
 export default class Render {
   private render: WebGLRender | CanvasRender
@@ -62,3 +63,6 @@ export default class Render {
     this.render.setPlaybackRate(playbackRate)
   }
 }
+
+/** 核心类实例类型（`new Render(...)` 的实例），便于业务侧标注 ref / getPlayer() 等 */
+export type IAlphaVideoPlayer = InstanceType<typeof Render>

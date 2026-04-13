@@ -27,6 +27,31 @@ import AlphaVideoPlayerJs from 'alpha-video-player-js'
 const player = new AlphaVideoPlayerJs(config)
 ```
 
+### TypeScript 类型
+
+主包与框架子路径会导出下列类型，便于标注 `ref`、`getPlayer()` 返回值等：
+
+| 包路径 | 导出类型 | 说明 |
+|--------|----------|------|
+| `alpha-video-player-js` | `IAlphaVideoPlayer` | 核心类实例（`new` 后的类型） |
+| | `IConfig`、`IOptionalConfig` | 构造 / `play()` 可选参数 |
+| | `IOrientation`、`ISide` | 拼合方向与 RGB 区域位置 |
+| `alpha-video-player-js/vue3`、`.../vue2` | `AlphaVideoPlayerExpose` | 组件 ref 上可调用的方法与 `getPlayer()`，与 React 侧 `AlphaVideoPlayerRef` 字段一致 |
+| `alpha-video-player-js/react` | `AlphaVideoPlayerRef` | 与 `AlphaVideoPlayerExpose` 同结构 |
+
+```ts
+import type { IAlphaVideoPlayer } from 'alpha-video-player-js'
+import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
+import type { AlphaVideoPlayerExpose } from 'alpha-video-player-js/vue3'
+
+const playerRef = ref<AlphaVideoPlayerExpose | null>(null)
+
+let core: IAlphaVideoPlayer | null = null
+const onCanPlay = () => {
+  core = playerRef.value?.getPlayer() ?? null
+}
+```
+
 ### 实例参数
 
 | 参数          | 含义                               | 默认值    | 是否必传 |
@@ -139,8 +164,9 @@ import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
 <script setup lang="ts">
 import { ref } from 'vue'
 import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
+import type { AlphaVideoPlayerExpose } from 'alpha-video-player-js/vue3'
 
-const playerRef = ref()
+const playerRef = ref<AlphaVideoPlayerExpose | null>(null)
 const playbackRate = ref(1)
 
 const onReady = () => {

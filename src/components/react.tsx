@@ -5,6 +5,7 @@ import React, {
   forwardRef,
 } from 'react'
 import Render from '../index'
+import type { AlphaVideoPlayerExpose } from '../framework-expose'
 import type { IOrientation, ISide } from '../type'
 
 export interface AlphaVideoPlayerProps {
@@ -38,18 +39,7 @@ export interface AlphaVideoPlayerProps {
   style?: React.CSSProperties
 }
 
-export interface AlphaVideoPlayerRef {
-  play: () => Promise<void> | undefined
-  pause: () => void
-  destroy: () => void
-  reset: () => void
-  setSrc: (src: string) => void
-  setCurrentTime: (time: number) => void
-  setMute: (muted: boolean) => void
-  setLoop: (loop: boolean) => void
-  setPlaybackRate: (rate: number) => void
-  getPlayer: () => Render | null
-}
+export type AlphaVideoPlayerRef = AlphaVideoPlayerExpose
 
 const AlphaVideoPlayer = forwardRef<AlphaVideoPlayerRef, AlphaVideoPlayerProps>(
   (props, ref) => {

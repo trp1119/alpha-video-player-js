@@ -55,5 +55,7 @@ declare class Render {
     setLoop(loop: boolean): void;
     setPlaybackRate(playbackRate: number): void;
 }
+/** 核心类实例类型（`new Render(...)` 的实例），便于业务侧标注 ref / getPlayer() 等 */
+type IAlphaVideoPlayer = InstanceType<typeof Render>;
 
-export { type IConfig, Render as default };
+export { type IAlphaVideoPlayer, type IConfig, type IOptionalConfig, type IOrientation, type ISide, Render as default };
