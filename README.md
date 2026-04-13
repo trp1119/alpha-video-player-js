@@ -29,22 +29,23 @@ const player = new AlphaVideoPlayerJs(config)
 
 ### TypeScript 类型
 
-主包与框架子路径会导出下列类型，便于标注 `ref`、`getPlayer()` 返回值等：
+主包与框架子路径会导出下列类型，便于标注 `ref`、`getPlayer()` 返回值等。
+
+**从 v1.2.0 起**：命令式 ref 类型统一为 **`IAlphaVideoPlayerRef`**；React 组件 props 为 **`IAlphaVideoPlayerProps`**（原 `AlphaVideoPlayerExpose` / 无 `I` 前缀的 `AlphaVideoPlayerRef`、`AlphaVideoPlayerProps` 已更名，升级时请全局替换）。
 
 | 包路径 | 导出类型 | 说明 |
 |--------|----------|------|
 | `alpha-video-player-js` | `IAlphaVideoPlayer` | 核心类实例（`new` 后的类型） |
 | | `IConfig`、`IOptionalConfig` | 构造 / `play()` 可选参数 |
 | | `IOrientation`、`ISide` | 拼合方向与 RGB 区域位置 |
-| `alpha-video-player-js/vue3`、`.../vue2` | `AlphaVideoPlayerExpose` | 组件 ref 上可调用的方法与 `getPlayer()`，与 React 侧 `AlphaVideoPlayerRef` 字段一致 |
-| `alpha-video-player-js/react` | `AlphaVideoPlayerRef` | 与 `AlphaVideoPlayerExpose` 同结构 |
+| `alpha-video-player-js/vue3`、`.../vue2` | `IAlphaVideoPlayer`、`IAlphaVideoPlayerRef` | 核心实例类型与组件 ref；**若同时用到二者，请从同一子路径导入**，避免与主包各有一份 `.d.ts` 时类型不兼容 |
+| `alpha-video-player-js/react` | `IAlphaVideoPlayerProps`、`IAlphaVideoPlayerRef` | 组件 props 与 ref |
 
 ```ts
-import type { IAlphaVideoPlayer } from 'alpha-video-player-js'
 import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
-import type { AlphaVideoPlayerExpose } from 'alpha-video-player-js/vue3'
+import type { IAlphaVideoPlayer, IAlphaVideoPlayerRef } from 'alpha-video-player-js/vue3'
 
-const playerRef = ref<AlphaVideoPlayerExpose | null>(null)
+const playerRef = ref<IAlphaVideoPlayerRef | null>(null)
 
 let core: IAlphaVideoPlayer | null = null
 const onCanPlay = () => {
@@ -164,9 +165,9 @@ import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
 <script setup lang="ts">
 import { ref } from 'vue'
 import AlphaVideoPlayer from 'alpha-video-player-js/vue3'
-import type { AlphaVideoPlayerExpose } from 'alpha-video-player-js/vue3'
+import type { IAlphaVideoPlayerRef } from 'alpha-video-player-js/vue3'
 
-const playerRef = ref<AlphaVideoPlayerExpose | null>(null)
+const playerRef = ref<IAlphaVideoPlayerRef | null>(null)
 const playbackRate = ref(1)
 
 const onReady = () => {
@@ -220,10 +221,10 @@ export default {
 ```tsx
 import { useRef } from 'react'
 import AlphaVideoPlayer from 'alpha-video-player-js/react'
-import type { AlphaVideoPlayerRef } from 'alpha-video-player-js/react'
+import type { IAlphaVideoPlayerRef } from 'alpha-video-player-js/react'
 
 function App() {
-  const playerRef = useRef<AlphaVideoPlayerRef>(null)
+  const playerRef = useRef<IAlphaVideoPlayerRef>(null)
 
   return (
     <AlphaVideoPlayer

@@ -23,7 +23,7 @@
 ```
 src/
 ├── index.ts                  # 库入口，门面类 Render（JS 版）
-├── framework-expose.ts       # Vue 2/3 ref 与 React ref 共用的 imperative 类型（AlphaVideoPlayerExpose）
+├── framework-ref.ts          # Vue 2/3 与 React 共用的命令式 ref 类型（IAlphaVideoPlayerRef）
 ├── vue3.ts                   # Vue 3 子入口
 ├── vue2.ts                   # Vue 2 子入口
 ├── react.ts                  # React 子入口
@@ -68,7 +68,7 @@ Render（index.ts，门面 / 策略选择）
   ├── components/vue2.ts  → import Render from '../index'
   └── components/react.tsx → import Render from '../index'
 
-framework-expose.ts → import type Render from './index'（仅类型，供 Vue2/3 子入口与 react 的 ref 类型共用）
+framework-ref.ts → import type Render from './index'（仅类型，供 Vue2/3 子入口与 react 的 ref 类型共用）
 
 type.ts ← 被所有模块引用
 util.ts ← 被 Video / WebGLRender / CanvasRender 引用
@@ -135,12 +135,12 @@ export type { IConfig, IOptionalConfig, IOrientation, ISide }
 export type IAlphaVideoPlayer = InstanceType<typeof Render>
 ```
 
-修改要点：新增公开方法时在此添加代理；若框架组件 `expose` / 命令式方法有变，同步更新 `framework-expose.ts` 与 `components/react.tsx` 中的 `AlphaVideoPlayerRef`。
+修改要点：新增公开方法时在此添加代理；若框架组件 `expose` / 命令式方法有变，同步更新 `framework-ref.ts` 与 `components/react.tsx` 中的 **`IAlphaVideoPlayerRef`**。
 
-### 6.1.1 `framework-expose.ts` — 框架 ref 类型
+### 6.1.1 `framework-ref.ts` — 框架 ref 类型
 
-- 导出 **`AlphaVideoPlayerExpose`**：`play` / `pause` / `destroy` / `reset` / `setSrc` / `setCurrentTime` / `setMute` / `setLoop` / `setPlaybackRate` / `getPlayer`，与 `components/vue3.ts` 的 `expose({ ... })` 一致。
-- `vue3.ts`、`vue2.ts` 子入口 **re-export** 该类型；React 侧 **`AlphaVideoPlayerRef`** 为其别名（`export type AlphaVideoPlayerRef = AlphaVideoPlayerExpose`）。
+- 导出 **`IAlphaVideoPlayerRef`**：`play` / `pause` / `destroy` / `reset` / `setSrc` / `setCurrentTime` / `setMute` / `setLoop` / `setPlaybackRate` / `getPlayer`，与 `components/vue3.ts` 的 `expose({ ... })` 一致。
+- `vue3.ts`、`vue2.ts` 子入口 **re-export** 该类型；React 子入口 **`react.ts`** 再导出 **`IAlphaVideoPlayerRef`**（与 `react` 组件 props 类型 **`IAlphaVideoPlayerProps`** 分开导出）。
 - 仅 **import type** 依赖 `./index` 中的 `Render` 类，用于 `getPlayer()` 返回类型，无运行时循环依赖。
 
 ### 6.2 `type.ts` — 类型定义
@@ -320,7 +320,7 @@ npm run release  # 交互式发版（patch/minor/major → build → tag → pub
 1. 在 `renderer/video.ts` 的 `Video` 类中添加方法实现
 2. 在 `index.ts` 的 `Render` 类中添加代理方法
 3. 在三个框架组件中补充对应的 expose / methods / imperativeHandle
-4. 更新 `framework-expose.ts` 中的 `AlphaVideoPlayerExpose`，并保持 `react.tsx` 中 `AlphaVideoPlayerRef` 与之同步
+4. 更新 `framework-ref.ts` 中的 `IAlphaVideoPlayerRef`，并保持 `react.tsx` 中 `forwardRef` 泛型与之同步
 
 ### 新增配置项
 
@@ -368,4 +368,4 @@ npm run release  # 交互式发版（patch/minor/major → build → tag → pub
 - **数字类 props**：`playbackRate` 等在组件内声明为 `Number`。原生 `<input type="range">` 使用 `v-model` 时，浏览器侧常为**字符串**，会触发 Vue 运行时的 prop 类型告警。应使用 **`v-model.number`**，或对绑定值做 **`Number(...)`** 再传入。
 - **根节点与样式**：`setup` 的 `return` 仅为 `h('div', { ref: containerRef })`，**无业务 class**。需要绝对定位、与背景图对齐、响应式外壳等，应在**父级包裹元素**上写 class / style；画布逻辑尺寸仍通过 **`width` / `height` props** 传给组件（与 JS 版 `IConfig` 一致）。
 - **销毁后再初始化**：`expose` 的 `destroy()` 会清空内部 `player`，且 **`init` 仅在 `onMounted` 调用**。用户手动 `destroy()` 后，同一组件实例不会自动再次 `init`。需要「销毁后再播」时，应对组件使用 **`:key` 变化**或 **`v-if` 重挂**，以触发新的挂载周期。演示仓库 **`alpha-video-player-js-demo`** 的 `Item.vue` 使用 **`playerKey` + `:key`** 实现该流程。
-- **TypeScript 与 ref**：从 `alpha-video-player-js/vue3`（或 `vue2`）导入 **`AlphaVideoPlayerExpose`**，用于 `ref<AlphaVideoPlayerExpose | null>(null)`；内核实例类型用主包 **`IAlphaVideoPlayer`** 或 **`getPlayer()` 返回值**。若 `expose` 增删方法，在 **`src/framework-expose.ts`** 与 **`components/react.tsx`** 的 `AlphaVideoPlayerRef` 一并更新。
+- **TypeScript 与 ref**：从 `alpha-video-player-js/vue3`（或 `vue2`）导入 **`IAlphaVideoPlayerRef`** 与（若需要）**`IAlphaVideoPlayer`**，且与 **`getPlayer()` 返回值**在同一子路径的类型体系内，避免主包与 `vue3.d.ts` 各内联一份 `Render` 导致「私有字段不一致」报错。若 `expose` 增删方法，在 **`src/framework-ref.ts`** 与 **`components/react.tsx`** 的 `forwardRef<IAlphaVideoPlayerRef, …>` 一并更新。

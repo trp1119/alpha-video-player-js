@@ -57,12 +57,13 @@ declare class Render {
     setLoop(loop: boolean): void;
     setPlaybackRate(playbackRate: number): void;
 }
+/** 核心类实例类型（`new Render(...)` 的实例），便于业务侧标注 ref / getPlayer() 等 */
+type IAlphaVideoPlayer = InstanceType<typeof Render>;
 
 /**
- * Vue 2 / Vue 3 组件通过 ref（或 Vue 3 的 expose）可调用的方法与内核实例。
- * 与 `alpha-video-player-js/react` 导出的 `AlphaVideoPlayerRef` 字段一致。
+ * Vue 2 / Vue 3 的 template ref、React 的 `useRef` 所指向的命令式 API 形状（与 `expose` / `useImperativeHandle` 一致）。
  */
-type AlphaVideoPlayerExpose = {
+type IAlphaVideoPlayerRef = {
     play: () => Promise<void> | undefined;
     pause: () => void;
     destroy: () => void;
@@ -72,7 +73,7 @@ type AlphaVideoPlayerExpose = {
     setMute: (muted: boolean) => void;
     setLoop: (loop: boolean) => void;
     setPlaybackRate: (rate: number) => void;
-    getPlayer: () => Render | null;
+    getPlayer: () => IAlphaVideoPlayer | null;
 };
 
-export { type AlphaVideoPlayerExpose, AlphaVideoPlayer as default };
+export { type IAlphaVideoPlayer, type IAlphaVideoPlayerRef, AlphaVideoPlayer as default };

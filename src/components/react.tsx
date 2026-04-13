@@ -5,10 +5,10 @@ import React, {
   forwardRef,
 } from 'react'
 import Render from '../index'
-import type { AlphaVideoPlayerExpose } from '../framework-expose'
+import type { IAlphaVideoPlayerRef } from '../framework-ref'
 import type { IOrientation, ISide } from '../type'
 
-export interface AlphaVideoPlayerProps {
+export interface IAlphaVideoPlayerProps {
   src?: string
   width?: number
   height?: number
@@ -39,9 +39,7 @@ export interface AlphaVideoPlayerProps {
   style?: React.CSSProperties
 }
 
-export type AlphaVideoPlayerRef = AlphaVideoPlayerExpose
-
-const AlphaVideoPlayer = forwardRef<AlphaVideoPlayerRef, AlphaVideoPlayerProps>(
+const AlphaVideoPlayer = forwardRef<IAlphaVideoPlayerRef, IAlphaVideoPlayerProps>(
   (props, ref) => {
     const containerRef = useRef<HTMLDivElement>(null)
     const playerRef = useRef<Render | null>(null)
