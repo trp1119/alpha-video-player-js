@@ -40,7 +40,10 @@
   ],
   "author": "https://github.com/trp1119",
   "license": "ISC",
-  "repository": "https://github.com/trp1119/alpha-video-player-js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/trp1119/alpha-video-player-js.git"
+  },
   "homepage": "https://trp1119.github.io/alpha-video-player-js-demo",
   "files": [
     "dist",
