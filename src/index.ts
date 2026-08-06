@@ -1,18 +1,24 @@
 import WebGLRender from './renderer/webgl-render'
 import CanvasRender from './renderer/canvas-render'
-import { supportCanvas2d, supportWebGL } from './util'
+import NativeVideoRender from './renderer/native-video-render'
+import { resolveAlphaScale, supportCanvas2d, supportWebGL } from './util'
 import type { IConfig, IOptionalConfig } from './type'
 
 export type { IConfig, IOptionalConfig }
-export type { IOrientation, ISide } from './type'
+export type { IAlphaAlign, IOrientation, ISide } from './type'
 
 export default class Render {
-  private render: WebGLRender | CanvasRender
+  private render: NativeVideoRender | WebGLRender | CanvasRender
   constructor (config: IConfig) {
-    if (supportWebGL()) {
-      this.render = new WebGLRender(config)
+    const alphaScale = resolveAlphaScale(config.alphaScale)
+    const resolvedConfig = Object.assign({}, config, { alphaScale })
+
+    if (alphaScale === 0) {
+      this.render = new NativeVideoRender(resolvedConfig)
+    } else if (supportWebGL()) {
+      this.render = new WebGLRender(resolvedConfig)
     } else if (supportCanvas2d()) {
-      this.render = new CanvasRender(config)
+      this.render = new CanvasRender(resolvedConfig)
     } else {
       throw new Error('[alpha-video-player-js]: Your browser does not support play. Please upgrade your browser and try again.')
     }

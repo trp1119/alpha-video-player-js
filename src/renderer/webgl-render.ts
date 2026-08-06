@@ -1,6 +1,6 @@
 import VSHADER_SOURCE from '../shaders/vertex.glsl'
 import FSHADER_SOURCE from '../shaders/fragment.glsl'
-import { computeVertexCoord } from '../util'
+import { computeVertexCoord, videoFrameReady } from '../util'
 import type { IConfig } from '../type'
 import Video from './video'
 
@@ -125,8 +125,8 @@ export default class WebGLRender extends Video {
    */
   private initVertexBuffer () {
     const { gl, program, config } = this
-    const { orientation, side } = config
-    const coords = computeVertexCoord(orientation, side)
+    const { orientation, side, alphaScale, alphaAlign } = config
+    const coords = computeVertexCoord(orientation, side, alphaScale, alphaAlign)
     // 创建缓冲区对象
     const vertexBuffer = gl.createBuffer()
     // 将顶点坐标和纹理坐标写入缓冲区对象
@@ -165,7 +165,7 @@ export default class WebGLRender extends Video {
    */
   protected drawFrameOnce () {
     const { gl, video } = this
-    if (!gl || !video || !this.canPlay) return
+    if (!gl || !video || !this.canPlay || !videoFrameReady(video)) return
     // 清除颜色缓冲区
     gl.clear(gl.COLOR_BUFFER_BIT)
     // 为纹理对象分配纹理图像

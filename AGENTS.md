@@ -28,6 +28,7 @@ src/
 ├── vue2.ts                   # Vue 2 子入口
 ├── react.ts                  # React 子入口
 ├── type.ts                   # 所有 TypeScript 类型定义
+├── constants.ts              # Alpha 布局默认值与 video poster / 就绪状态常量
 ├── util.ts                   # 工具函数（能力检测、坐标计算、canvas 创建等）
 ├── glsl.d.ts                 # GLSL 文件模块声明
 ├── vue2-shim.d.ts            # vue2 别名模块声明
@@ -37,6 +38,7 @@ src/
 │   └── react.tsx             # React 组件（forwardRef + hooks）
 ├── renderer/
 │   ├── video.ts              # 基类 Video：视频管理、帧循环、事件、生命周期
+│   ├── native-video-render.ts # 普通不透明视频原生渲染器
 │   ├── webgl-render.ts       # WebGL 渲染子类
 │   └── canvas-render.ts      # Canvas 2D 渲染子类（降级方案）
 └── shaders/
@@ -59,6 +61,7 @@ dist/
 
 ```
 Render（index.ts，门面 / 策略选择）
+  ├── NativeVideoRender（native-video-render.ts）extends Video
   ├── WebGLRender（webgl-render.ts）extends Video
   └── CanvasRender（canvas-render.ts）extends Video
         └── Video（video.ts，公共基类）
@@ -93,12 +96,15 @@ shaders/*.glsl ← 仅被 WebGLRender 引用
 
 `side` 参数控制 RGB/Alpha 的前后位置，`'back'` 则反转。
 
+`alphaScale` 控制 Alpha 遮罩宽高相对 RGB 的缩放比例：`1` 为原有等尺寸格式，`0.5` 表示宽高均缩小一半，`0` 表示普通不透明视频。Alpha 缩小后由 `alphaAlign` 控制副轴位置：横向布局的 `start/end` 对应上/下，纵向布局对应左/右。
+
 ### 5.2 渲染策略选择
 
 ```
-supportWebGL()  → true  → WebGLRender
-supportWebGL()  → false → supportCanvas2d() → true  → CanvasRender
-                                              → false → 抛出异常
+alphaScale === 0 → NativeVideoRender
+alphaScale > 0   → supportWebGL()  → true  → WebGLRender
+                                  → false → supportCanvas2d() → true  → CanvasRender
+                                                                  → false → 抛出异常
 ```
 
 ### 5.3 帧循环策略（`Video.initAdaptAnimation`）
@@ -126,12 +132,12 @@ supportWebGL()  → false → supportCanvas2d() → true  → CanvasRender
 
 ```typescript
 export default class Render {
-  private render: WebGLRender | CanvasRender
+  private render: NativeVideoRender | WebGLRender | CanvasRender
   // 根据浏览器能力选择渲染器
   // 对外暴露：play / pause / destroy / reset / setSrc / setCurrentTime / setMute / setLoop / setPlaybackRate
   // 以及 getter：playing / loop
 }
-export type { IConfig, IOptionalConfig, IOrientation, ISide }
+export type { IConfig, IOptionalConfig, IOrientation, ISide, IAlphaAlign }
 export type IAlphaVideoPlayer = InstanceType<typeof Render>
 ```
 
@@ -151,8 +157,7 @@ export type IAlphaVideoPlayer = InstanceType<typeof Render>
 | `IOptionalConfig` | `play()` 调用时的可选配置（container/src 变可选） |
 | `IOrientation` | `'landscape' \| 'portrait'` |
 | `ISide` | `'front' \| 'back'` |
-| `ICoords` | WebGL 纹理坐标映射表类型 |
-| `IImageCoords` | Canvas 2D 的 `[x, y, w, h]` 裁剪区域 |
+| `IAlphaAlign` | `'start' \| 'end'`，Alpha 在副轴上的对齐方式 |
 
 ### 6.3 `util.ts` — 工具函数
 
@@ -162,22 +167,23 @@ export type IAlphaVideoPlayer = InstanceType<typeof Render>
 | `supportCanvas2d()` | 检测 Canvas 2D 支持 |
 | `supportWebGL()` | 检测 WebGL 支持 |
 | `initCanvas(container, w?, h?)` | 创建 canvas 元素并插入容器，按 DPR 设置像素尺寸 |
-| `computeDisplayRatio(vw, vh, orientation)` | 计算 alpha 视频的实际显示宽高比 |
+| `resolveAlphaScale(alphaScale)` | 校验并归一化 `0 ~ 1` 的 Alpha 缩放比例 |
+| `computeLayoutRects(orientation, side, alphaScale, alphaAlign)` | 计算 RGB/Alpha 归一化区域 |
+| `computeDisplayRatio(vw, vh, orientation, alphaScale, alphaAlign)` | 计算视频实际显示宽高比 |
 | `resizeCanvas(canvas, w, h)` | 更新 canvas 像素尺寸和 CSS 尺寸 |
-| `computeVertexCoord(orientation, side)` | **WebGL 专用**：返回交错的顶点+RGB纹理+Alpha纹理坐标 Float32Array |
-| `computeImageCoord(orientation, side, w, h)` | **Canvas 2D 专用**：返回 `getImageData` 的裁剪区域坐标 |
-| `computeSize(orientation, type, size)` | Canvas 2D 临时画布尺寸计算 |
+| `computeVertexCoord(orientation, side, alphaScale, alphaAlign)` | **WebGL 专用**：返回交错的顶点+RGB纹理+Alpha纹理坐标 Float32Array |
 | `videoExists(video)` | 断言 video 已存在 |
 | `getRequestAnimationFrame()` | 跨浏览器 rAF，SSR 安全 |
 | `getCancelAnimationFrame()` | 跨浏览器 cAF，SSR 安全 |
+| `videoFrameReady(video)` | 确认真实媒体帧已就绪，避免 WebGL / Canvas 读取 Android WebView 默认 poster |
 
-**坐标系统关键数据**：`DEFINE_COORDS` 常量定义了 4 种布局下的纹理 UV 映射（landscape/portrait × front/back）。
+**坐标系统关键数据**：RGB/Alpha 坐标由 `orientation × side × alphaScale × alphaAlign` 动态计算；`alphaScale=1` 时与原有四类等分布局一致。
 
 ### 6.4 `renderer/video.ts` — 基类
 
 **职责**：
 
-- 创建隐藏的 `<video>` 元素并挂到 `document.body`
+- 透明视频创建隐藏的 `<video>` 并挂到 `document.body`；普通视频直接挂载到 container
 - 管理视频生命周期事件（loadedmetadata / canplaythrough / play / pause / ended / error）
 - 帧循环驱动（`drawFrame` → 子类 `drawFrameOnce` → 递归）
 - `autoResize` 计算与通知
@@ -224,14 +230,21 @@ fragment.glsl：rgb = texture(rgbCoord).rgb, alpha = texture(alphaCoord).r
 
 **销毁**：分离/删除着色器 → 删除纹理 → 删除缓冲区 → 删除程序 → loseContext 释放资源
 
+### 6.5.1 `renderer/native-video-render.ts` — 原生视频渲染
+
+- 仅在 `alphaScale=0` 时使用，不创建 canvas，也不启动逐帧循环。
+- 复用 `Video` 基类的视频元素、播放 API、事件和生命周期。
+- video 直接挂载到 container；`autoShow/autoClear` 通过元素可见性实现。
+
 ### 6.6 `renderer/canvas-render.ts` — Canvas 2D 渲染（降级）
 
 **渲染流程**：
 
-1. 构造时：创建临时 canvas（尺寸为原始 2 倍宽或高，取决于 orientation）
+1. 构造时：创建与输出 canvas 同尺寸的 Alpha 临时画布
 2. 每帧（`drawFrameOnce`）：
-   - `tempContext2d.drawImage(video)` 将整帧缩放绘制到临时 canvas
-   - `getImageData` 分别获取 RGB 区域和 Alpha 区域的像素数据
+   - 将 RGB 源区域缩放绘制到输出 canvas
+   - 将 Alpha 源区域缩放绘制到临时 canvas，确保与 RGB 输出像素数一致
+   - `getImageData` 分别获取 RGB 和放大后的 Alpha 像素数据
    - 逐像素：`imageData[i+3] = alphaData[i]`（用 Alpha 区的 R 通道替换 RGB 区的 A 通道）
    - `putImageData` 写回主 canvas
 
@@ -250,7 +263,7 @@ fragment.glsl：rgb = texture(rgbCoord).rgb, alpha = texture(alphaCoord).r
   │
   ├── 检测 WebGL / Canvas2D 能力
   ├── 创建 canvas 插入 container
-  ├── 若有 src，创建隐藏 video 并 load
+  ├── 若有 src：透明视频创建隐藏 video，普通视频创建可见 video
   │
   └── video 事件驱动：
         loadedmetadata → onLoad()  → autoResize 计算 → onCanvasResized()
@@ -273,6 +286,7 @@ fragment.glsl：rgb = texture(rgbCoord).rgb, alpha = texture(alphaCoord).r
 |------|------|--------|------|
 | `container` | HTMLElement | **必填** | 挂载容器 |
 | `src` | string | — | 视频地址 |
+| `poster` | string | 内置透明封面 | 视频封面；用户传入值优先，用于避免 Android WebView 注入不可跨域读取的默认 poster |
 | `width` / `height` | number | 容器尺寸 | canvas 逻辑尺寸 |
 | `crossOrigin` | string | `'anonymous'` | 跨域策略 |
 | `muted` | boolean | `true` | 静音 |
@@ -281,6 +295,8 @@ fragment.glsl：rgb = texture(rgbCoord).rgb, alpha = texture(alphaCoord).r
 | `fps` | number | `0`（不限帧） | 限帧率 |
 | `orientation` | `'landscape' \| 'portrait'` | `'landscape'` | 视频拼合方向 |
 | `side` | `'front' \| 'back'` | `'front'` | RGB 区域位置 |
+| `alphaScale` | `number`（`0 ~ 1`） | `1` | Alpha 宽高相对 RGB 的缩放比例；`0` 为普通视频 |
+| `alphaAlign` | `'start' \| 'end'` | `'start'` | Alpha 缩小后的副轴对齐方式 |
 | `videoFrame` | boolean | `false` | 使用 requestVideoFrameCallback |
 | `autoShow` | boolean | `false` | canplay 后自动绘制首帧 |
 | `autoClear` | boolean | `true` | 播放结束后清空 canvas |
@@ -344,8 +360,8 @@ npm run release  # 交互式发版（patch/minor/major → build → tag → pub
 
 ### 修改坐标映射 / 支持新的拼合布局
 
-- 修改 `util.ts` 中的 `DEFINE_COORDS`（WebGL 用）和 `IMAGE_COORDS_MAP`（Canvas 2D 用）
-- 同步更新 `type.ts` 中的 `IOrientation` 类型
+- 修改 `util.ts` 中的 `computeLayoutRects()` 归一化区域计算
+- 若新增布局维度，同步更新 `type.ts` 中相应的公开类型
 
 ### 修改帧循环策略
 
@@ -358,7 +374,8 @@ npm run release  # 交互式发版（patch/minor/major → build → tag → pub
 ## 11. 设计备忘
 
 - **Canvas 2D 降级**：逐像素遍历性能远低于 WebGL，仅在 WebGL 不可用时启用。现代浏览器几乎全覆盖 WebGL。
-- **video 挂载位置**：隐藏 video 挂在 `document.body`（`width: 0; height: 0`），而非 container 内，避免受容器 CSS（overflow / transform 等）影响。销毁时通过 `parentNode?.removeChild` 清理，与挂载位置无关。
+- **Android WebView poster**：初始化 video 时先设置 `crossOrigin`，再设置用户 `poster` 或透明兜底，最后设置 `src`；WebGL / Canvas 仅在 `readyState >= HAVE_CURRENT_DATA` 且视频尺寸有效时读取帧。
+- **video 挂载位置**：透明视频的隐藏 video 挂在 `document.body`（`width: 0; height: 0`），避免受容器 CSS 影响；`alphaScale=0` 时原生 video 直接挂载到 container。销毁时统一通过 `parentNode?.removeChild` 清理。
 - **destroy 后的空安全**：`destroy()` 将核心引用（`config`、`video`、`canvas`、GL 资源等）置 `null`，类型已标注 `| null`。销毁后不应再调用实例方法。
 
 ## 12. Vue 组件（`alpha-video-player-js/vue3`）模板侧注意

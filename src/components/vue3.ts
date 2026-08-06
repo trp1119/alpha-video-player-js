@@ -8,12 +8,14 @@ import {
   type PropType,
 } from 'vue'
 import Render from '../index'
-import type { IOrientation, ISide } from '../type'
+import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE } from '../constants'
+import type { IAlphaAlign, IOrientation, ISide } from '../type'
 
 export default defineComponent({
   name: 'AlphaVideoPlayer',
   props: {
     src: { type: String, default: undefined },
+    poster: { type: String, default: undefined },
     width: { type: Number, default: undefined },
     height: { type: Number, default: undefined },
     crossOrigin: { type: String as PropType<'anonymous' | 'use-credentials'>, default: undefined },
@@ -23,6 +25,8 @@ export default defineComponent({
     fps: { type: Number, default: 0 },
     orientation: { type: String as PropType<IOrientation>, default: 'landscape' },
     side: { type: String as PropType<ISide>, default: 'front' },
+    alphaScale: { type: Number, default: DEFAULT_ALPHA_SCALE },
+    alphaAlign: { type: String as PropType<IAlphaAlign>, default: DEFAULT_ALPHA_ALIGN },
     videoFrame: { type: Boolean, default: false },
     debug: { type: Boolean, default: false },
     autoShow: { type: Boolean, default: false },
@@ -55,6 +59,7 @@ export default defineComponent({
       player = new Render({
         container: containerRef.value,
         src: props.src,
+        poster: props.poster,
         width: props.width,
         height: props.height,
         crossOrigin: props.crossOrigin,
@@ -64,6 +69,8 @@ export default defineComponent({
         fps: props.fps,
         orientation: props.orientation,
         side: props.side,
+        alphaScale: props.alphaScale,
+        alphaAlign: props.alphaAlign,
         videoFrame: props.videoFrame,
         debug: props.debug,
         autoShow: props.autoShow,

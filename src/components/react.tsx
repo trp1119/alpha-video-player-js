@@ -5,11 +5,13 @@ import React, {
   forwardRef,
 } from 'react'
 import Render from '../index'
+import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE } from '../constants'
 import type { IAlphaVideoPlayerRef } from '../framework-ref'
-import type { IOrientation, ISide } from '../type'
+import type { IAlphaAlign, IOrientation, ISide } from '../type'
 
 export interface IAlphaVideoPlayerProps {
   src?: string
+  poster?: string
   width?: number
   height?: number
   crossOrigin?: 'anonymous' | 'use-credentials'
@@ -19,6 +21,8 @@ export interface IAlphaVideoPlayerProps {
   fps?: number
   orientation?: IOrientation
   side?: ISide
+  alphaScale?: number
+  alphaAlign?: IAlphaAlign
   videoFrame?: boolean
   debug?: boolean
   autoShow?: boolean
@@ -53,6 +57,7 @@ const AlphaVideoPlayer = forwardRef<IAlphaVideoPlayerRef, IAlphaVideoPlayerProps
       playerRef.current = new Render({
         container: containerRef.current,
         src: p.src,
+        poster: p.poster,
         width: p.width,
         height: p.height,
         crossOrigin: p.crossOrigin,
@@ -60,8 +65,10 @@ const AlphaVideoPlayer = forwardRef<IAlphaVideoPlayerRef, IAlphaVideoPlayerProps
         loop: p.loop ?? false,
         playbackRate: p.playbackRate ?? 1,
         fps: p.fps,
-        orientation: p.orientation,
-        side: p.side,
+        orientation: p.orientation ?? 'landscape',
+        side: p.side ?? 'front',
+        alphaScale: p.alphaScale ?? DEFAULT_ALPHA_SCALE,
+        alphaAlign: p.alphaAlign ?? DEFAULT_ALPHA_ALIGN,
         videoFrame: p.videoFrame,
         debug: p.debug,
         autoShow: p.autoShow,

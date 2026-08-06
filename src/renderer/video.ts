@@ -1,5 +1,6 @@
 import type { IConfig, IOptionalConfig } from '../type'
-import { initCanvas, resizeCanvas, computeDisplayRatio, getDpr, videoExists, getRequestAnimationFrame, getCancelAnimationFrame } from '../util'
+import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE, TRANSPARENT_VIDEO_POSTER } from '../constants'
+import { initCanvas, resizeCanvas, computeDisplayRatio, getDpr, videoExists, getRequestAnimationFrame, getCancelAnimationFrame, resolveAlphaScale } from '../util'
 
 const DEFAULT_CONFIG: Omit<IConfig, 'container' | 'src'> = {
   playbackRate: 1,
@@ -8,6 +9,8 @@ const DEFAULT_CONFIG: Omit<IConfig, 'container' | 'src'> = {
   fps: 0,
   orientation: 'landscape',
   side: 'front',
+  alphaScale: DEFAULT_ALPHA_SCALE,
+  alphaAlign: DEFAULT_ALPHA_ALIGN,
   autoShow: false,
   autoClear: true,
   autoDestroy: false,
@@ -29,18 +32,22 @@ export default class Video {
   private onCanPlayTimes = 1
   protected canPlay = false
   private adaptAnimation: null | ((cb: Function) => number) = null
+  private renderVideoDirectly = false
   public playing = false
 
-  constructor (config: IConfig) {
+  constructor (config: IConfig, renderVideoDirectly = false) {
     if (!config.container) {
       throw new Error('[alpha-video-player-js]: container can not be empty！')
     }
+    this.renderVideoDirectly = renderVideoDirectly
     this.setConfig(config)
     this.container = config.container
-    this.canvas = initCanvas(this.container, config.width, config.height)
-    const { width, height } = this.canvas
-    this.canvasWidth = width
-    this.canvasHeight = height
+    if (!renderVideoDirectly) {
+      this.canvas = initCanvas(this.container, config.width, config.height)
+      const { width, height } = this.canvas
+      this.canvasWidth = width
+      this.canvasHeight = height
+    }
     if (config.src) {
       this.initVideo()
     }
@@ -52,15 +59,20 @@ export default class Video {
 
   private setConfig (config: IConfig | IOptionalConfig) {
     if (!config) return
-    this.config = Object.assign({}, DEFAULT_CONFIG, this.config || {}, config) as IConfig
+    const nextConfig = Object.assign({}, DEFAULT_CONFIG, this.config || {}, config) as IConfig
+    nextConfig.alphaScale = resolveAlphaScale(nextConfig.alphaScale)
+    nextConfig.alphaAlign = nextConfig.alphaAlign || DEFAULT_ALPHA_ALIGN
+    this.config = nextConfig
   }
 
   private initVideo () {
-    const { src, playbackRate, muted, loop, crossOrigin } = this.config
+    const { src, poster, playbackRate, muted, loop, crossOrigin } = this.config
   
     const video = this.video = document.createElement('video')
-    video.src = src
     video.crossOrigin = crossOrigin ?? 'anonymous'
+    // 用户 poster 优先；透明兜底阻止 Android WebView 注入内部默认 poster。
+    video.poster = poster || TRANSPARENT_VIDEO_POSTER
+    video.src = src
     video.autoplay = false
     video.preload = 'auto'
     video.playbackRate = playbackRate
@@ -73,12 +85,23 @@ export default class Video {
     video.setAttribute('playsinline', '')
     video.setAttribute('webkit-playsinline', '')
     video.setAttribute('x-webkit-airplay', '')
-    video.style.position = 'absolute'
-    video.style.width = '0'
-    video.style.height = '0'
-    video.style.overflow = 'hidden'
-    video.style.pointerEvents = 'none'
-    document.body.appendChild(video)
+    if (this.renderVideoDirectly) {
+      const width = this.config.width || this.container.offsetWidth
+      const height = this.config.height || this.container.offsetHeight
+      video.style.display = 'block'
+      video.style.width = width ? `${width}px` : '100%'
+      video.style.height = height ? `${height}px` : '100%'
+      video.style.visibility = this.config.autoShow ? 'visible' : 'hidden'
+      video.style.pointerEvents = 'none'
+      this.container.appendChild(video)
+    } else {
+      video.style.position = 'absolute'
+      video.style.width = '0'
+      video.style.height = '0'
+      video.style.overflow = 'hidden'
+      video.style.pointerEvents = 'none'
+      document.body.appendChild(video)
+    }
 
     this.bindInstance()
     this.addEvent()
@@ -134,6 +157,7 @@ export default class Video {
   private cancelDrawFrame () {
     const { animationId, config } = this
     if (!animationId) {
+      this.playing = false
       return
     }
 
@@ -158,7 +182,12 @@ export default class Video {
   
     try {
       const res = await this.video.play()
-      this.drawFrame()
+      if (this.renderVideoDirectly) {
+        this.setNativeVideoVisible(true)
+        this.playing = true
+      } else {
+        this.drawFrame()
+      }
       return res
     } catch (error) {
       this.config.onError?.(error)
@@ -172,7 +201,11 @@ export default class Video {
     videoExists(this.video)
   
     this.video.pause()
-    this.cancelDrawFrame()
+    if (this.renderVideoDirectly) {
+      this.playing = false
+    } else {
+      this.cancelDrawFrame()
+    }
   }
   /**
    * 重置播放
@@ -188,6 +221,9 @@ export default class Video {
     this.canPlay = false
     this.onCanPlayTimes = 1
     this.config.src = src
+    if (this.renderVideoDirectly) {
+      this.setNativeVideoVisible(!!this.config.autoShow)
+    }
 
     if (!this.video) {
       this.initVideo()
@@ -240,18 +276,28 @@ export default class Video {
   }
   /**
    * 视频加载完毕触发。
-   * 若配置了 autoResize，根据视频实际比例自动调整 canvas 尺寸。
+   * 若配置了 autoResize，根据视频实际比例自动调整渲染目标尺寸。
    */
   protected onLoad () {
     const { video, config, canvas } = this
     this.videoWidth = video.videoWidth
     this.videoHeight = video.videoHeight
 
-    if (config.autoResize && canvas && video.videoWidth > 0 && video.videoHeight > 0) {
+    if (config.autoResize && (canvas || this.renderVideoDirectly) && video.videoWidth > 0 && video.videoHeight > 0) {
       const dpr = getDpr()
-      const videoRatio = computeDisplayRatio(video.videoWidth, video.videoHeight, config.orientation!)
-      const boxWidth = canvas.width / dpr
-      const boxHeight = canvas.height / dpr
+      const videoRatio = computeDisplayRatio(
+        video.videoWidth,
+        video.videoHeight,
+        config.orientation!,
+        config.alphaScale,
+        config.alphaAlign,
+      )
+      const boxWidth = canvas
+        ? canvas.width / dpr
+        : (config.width || this.container?.offsetWidth || video.videoWidth)
+      const boxHeight = canvas
+        ? canvas.height / dpr
+        : (config.height || this.container?.offsetHeight || video.videoHeight)
 
       let fixDimension: 'width' | 'height'
       if (config.autoResize === 'width' || config.autoResize === 'height') {
@@ -267,11 +313,14 @@ export default class Video {
 
       const targetW = newWidth * dpr
       const targetH = newHeight * dpr
-      if (targetW !== this.canvasWidth || targetH !== this.canvasHeight) {
+      if (canvas && (targetW !== this.canvasWidth || targetH !== this.canvasHeight)) {
         resizeCanvas(canvas, newWidth, newHeight)
         this.canvasWidth = canvas.width
         this.canvasHeight = canvas.height
         this.onCanvasResized()
+      } else if (this.renderVideoDirectly) {
+        video.style.width = `${newWidth}px`
+        video.style.height = `${newHeight}px`
       }
     }
 
@@ -291,7 +340,11 @@ export default class Video {
     const { config } = this
     this.canPlay = true
 
-    config.autoShow && this.drawFrameOnce()
+    if (this.renderVideoDirectly) {
+      config.autoShow && this.setNativeVideoVisible(true)
+    } else {
+      config.autoShow && this.drawFrameOnce()
+    }
 
     // video canplay 回调会循环触发，此处保证用户 onCanPlay 回调仅首次执行
     if (this.onCanPlayTimes === 1 && config.onCanPlay) {
@@ -324,6 +377,14 @@ export default class Video {
     video.currentTime = 0
     this.cancelDrawFrame()
     config.onEnded && config.onEnded()
+  }
+  /**
+   * 原生视频模式通过可见性模拟 canvas 的 autoShow / autoClear 行为。
+   */
+  protected setNativeVideoVisible (visible: boolean) {
+    if (this.renderVideoDirectly && this.video) {
+      this.video.style.visibility = visible ? 'visible' : 'hidden'
+    }
   }
   /**
    * 视频播放出错触发

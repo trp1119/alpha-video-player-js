@@ -9,12 +9,14 @@
 // @ts-ignore — vue2 别名，构建时替换为 'vue'
 import Vue2 from 'vue2'
 import Render from '../index'
-import type { IOrientation, ISide } from '../type'
+import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE } from '../constants'
+import type { IAlphaAlign, IOrientation, ISide } from '../type'
 
 const AlphaVideoPlayer = (Vue2 as any).extend({
   name: 'AlphaVideoPlayer',
   props: {
     src: { type: String, default: undefined },
+    poster: { type: String, default: undefined },
     width: { type: Number, default: undefined },
     height: { type: Number, default: undefined },
     crossOrigin: { type: String, default: undefined },
@@ -24,6 +26,8 @@ const AlphaVideoPlayer = (Vue2 as any).extend({
     fps: { type: Number, default: 0 },
     orientation: { type: String, default: 'landscape' },
     side: { type: String, default: 'front' },
+    alphaScale: { type: Number, default: DEFAULT_ALPHA_SCALE },
+    alphaAlign: { type: String, default: DEFAULT_ALPHA_ALIGN },
     videoFrame: { type: Boolean, default: false },
     debug: { type: Boolean, default: false },
     autoShow: { type: Boolean, default: false },
@@ -58,6 +62,7 @@ const AlphaVideoPlayer = (Vue2 as any).extend({
       self._player = new Render({
         container: el,
         src: self.src,
+        poster: self.poster,
         width: self.width,
         height: self.height,
         crossOrigin: self.crossOrigin,
@@ -67,6 +72,8 @@ const AlphaVideoPlayer = (Vue2 as any).extend({
         fps: self.fps,
         orientation: self.orientation as IOrientation,
         side: self.side as ISide,
+        alphaScale: self.alphaScale,
+        alphaAlign: self.alphaAlign as IAlphaAlign,
         videoFrame: self.videoFrame,
         debug: self.debug,
         autoShow: self.autoShow,
