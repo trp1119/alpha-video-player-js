@@ -14,22 +14,6 @@ interface ILayoutRect {
 export const getDpr = () => typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1
 
 /**
- * 是否支持 canvas2d
- */
-export const supportCanvas2d = () => {
-  const canvas = document.createElement('canvas')
-  return !!canvas.getContext('2d')
-}
-
-/**
- * 是否支持 webgl
- */
-export const supportWebGL = () => {
-  const canvas = document.createElement('canvas')
-  return !!(canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
-}
-
-/**
  * 创建画布
  * @param container 容器
  * @returns 画布

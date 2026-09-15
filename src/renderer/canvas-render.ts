@@ -7,19 +7,13 @@ export default class CanvasRender extends Video {
   private alphaCanvas: HTMLCanvasElement | null
   private alphaContext2d: CanvasRenderingContext2D | null
 
-  constructor (config: IConfig) {
-    const { onInitSuccess, onInitError } = config
-     try {
-      super(config)
+  constructor (config: IConfig, canvas: HTMLCanvasElement) {
+    super(config, false, canvas)
+    try {
       this.initCanvasRender()
-
-      onInitSuccess && onInitSuccess()
-    } catch (e: any) {
-      if (onInitError) {
-        onInitError(e)
-      } else {
-        throw e
-      }
+    } catch (error) {
+      this.destroy(false)
+      throw error
     }
   }
   /**
@@ -28,6 +22,7 @@ export default class CanvasRender extends Video {
   private initCanvasRender () {
     const { canvas } = this
     this.context2d = canvas.getContext('2d')
+    if (!this.context2d) throw new Error('[alpha-video-player-js]: Your browser does not support canvas rendering.')
     this.resizeAlphaCanvas()
   }
   protected onCanvasResized () {
@@ -41,6 +36,7 @@ export default class CanvasRender extends Video {
     alphaCanvas.height = this.canvasHeight
     this.alphaCanvas = alphaCanvas
     this.alphaContext2d = alphaCanvas.getContext('2d')
+    if (!this.alphaContext2d) throw new Error('[alpha-video-player-js]: Unable to allocate the alpha canvas.')
   }
 
   /**
@@ -85,13 +81,6 @@ export default class CanvasRender extends Video {
     context2d.putImageData(image, 0, 0)
   }
   /**
-   * 逐帧绘制当前视频内容
-   */
-  protected drawFrame () {
-    this.drawFrameOnce()
-    super.drawFrame()
-  }
-  /**
    * 播放结束触发
    */
   protected onEnded () {
@@ -99,20 +88,17 @@ export default class CanvasRender extends Video {
     // 清除画布
     config.autoClear && context2d.clearRect(0, 0, canvasWidth, canvasHeight)
     super.onEnded()
-    config.autoDestroy && this.destroy()
   }
   /**
    * 销毁
    */
-  public destroy() {
-    const {canvas } = this
-    if (!canvas) return
-    super.destroy()
-    canvas.parentNode?.removeChild(canvas)
-    // 释放内存
-    this.canvas = null
-    this.context2d = null
-    this.alphaCanvas = null
-    this.alphaContext2d = null
+  protected releaseRenderResources () {
+    try {
+      if (this.alphaCanvas) this.alphaCanvas.width = this.alphaCanvas.height = 0
+    } finally {
+      this.context2d = null
+      this.alphaCanvas = null
+      this.alphaContext2d = null
+    }
   }
 }

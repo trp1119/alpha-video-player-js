@@ -1,6 +1,6 @@
 import type { IConfig, IOptionalConfig } from '../type'
 import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE, TRANSPARENT_VIDEO_POSTER } from '../constants'
-import { initCanvas, resizeCanvas, computeDisplayRatio, getDpr, videoExists, getRequestAnimationFrame, getCancelAnimationFrame, resolveAlphaScale } from '../util'
+import { resizeCanvas, computeDisplayRatio, getDpr, videoExists, getRequestAnimationFrame, getCancelAnimationFrame, resolveAlphaScale } from '../util'
 
 const DEFAULT_CONFIG: Omit<IConfig, 'container' | 'src'> = {
   playbackRate: 1,
@@ -28,28 +28,34 @@ export default class Video {
   protected canvasHeight = 0
   protected videoWidth = 0
   protected videoHeight = 0
-  private animationId = 0
+  private animationId: number | null = null
+  private animationGeneration = 0
+  private playRequestId = 0
+  private destroyed = false
   private onCanPlayTimes = 1
   protected canPlay = false
-  private adaptAnimation: null | ((cb: Function) => number) = null
+  private cancelAnimation: null | ((id: number) => void) = null
   private renderVideoDirectly = false
   public playing = false
 
-  constructor (config: IConfig, renderVideoDirectly = false) {
+  constructor (config: IConfig, renderVideoDirectly = false, canvas: HTMLCanvasElement | null = null) {
     if (!config.container) {
       throw new Error('[alpha-video-player-js]: container can not be empty！')
     }
     this.renderVideoDirectly = renderVideoDirectly
     this.setConfig(config)
     this.container = config.container
-    if (!renderVideoDirectly) {
-      this.canvas = initCanvas(this.container, config.width, config.height)
+    this.canvas = canvas
+    if (canvas) {
       const { width, height } = this.canvas
       this.canvasWidth = width
       this.canvasHeight = height
     }
-    if (config.src) {
-      this.initVideo()
+    try {
+      if (config.src) this.initVideo()
+    } catch (error) {
+      this.destroy(false)
+      throw error
     }
   }
 
@@ -115,39 +121,54 @@ export default class Video {
    * 逐帧绘制当前视频内容
    */
   protected drawFrame () {
-    const drawFrame = this.drawFrame.bind(this)
-    if (!this.adaptAnimation) {
-      this.adaptAnimation = this.initAdaptAnimation()
+    if (this.destroyed || !this.playing || this.animationId !== null) return
+    const generation = this.animationGeneration
+    const { request, cancel } = this.initAdaptAnimation()
+    this.cancelAnimation = cancel
+    const interval = this.config.fps > 0 ? 1000 / this.config.fps : 0
+    let lastFrameTime: number | undefined
+    const active = () => !this.destroyed && this.playing && generation === this.animationGeneration &&
+      this.video && !this.video.paused && !this.video.ended
+    const frame = (timestamp?: number) => {
+      // 已经进入队列的旧回调也必须失效，不能在暂停/销毁后重新续订帧循环。
+      if (!active()) return
+      this.animationId = null
+      try {
+        if (timestamp === undefined || lastFrameTime === undefined || timestamp - lastFrameTime >= interval) {
+          this.drawFrameOnce()
+          lastFrameTime = lastFrameTime === undefined || timestamp === undefined || !interval
+            ? timestamp
+            : timestamp - (timestamp - lastFrameTime) % interval
+        }
+      } catch (error) {
+        this.onError(error)
+        return
+      }
+      if (active()) this.animationId = request(frame)
     }
-    this.animationId = this.adaptAnimation(drawFrame)
-    this.playing = true
+    frame()
   }
 
   private initAdaptAnimation () {
     const { videoFrame, fps } = this.config
     const rAF = getRequestAnimationFrame()
+    const cAF = getCancelAnimationFrame()
+    const video = this.video
 
-    if ('requestVideoFrameCallback' in HTMLVideoElement.prototype && videoFrame) {
-      return (cb: Function) => this.video.requestVideoFrameCallback(cb as VideoFrameRequestCallback)
-    } else if (rAF) {
-      if (fps) {
-        let frame = -1
-        return (cb: Function) => {
-          frame++
-          return rAF(() => {
-            if (frame % (60 / fps) === 0) {
-              return cb()
-            } else {
-              this.animationId = this.adaptAnimation(cb)
-            }
-          })
-        }
-      } else {
-        return (cb: Function) => rAF(cb as FrameRequestCallback)
+    if (videoFrame && video.requestVideoFrameCallback && video.cancelVideoFrameCallback) {
+      return {
+        request: (cb: FrameRequestCallback) => video.requestVideoFrameCallback(cb),
+        cancel: (id: number) => video.cancelVideoFrameCallback(id),
       }
-    } else {
-      const interval = fps > 0 ? 1000 / fps : 16
-      return (cb: Function) => window.setTimeout(cb, interval)
+    }
+    if (rAF && cAF) return {
+      request: (cb: FrameRequestCallback) => rAF.call(window, cb),
+      cancel: (id: number) => cAF.call(window, id),
+    }
+    const interval = fps > 0 ? 1000 / fps : 16
+    return {
+      request: (cb: FrameRequestCallback) => window.setTimeout(() => cb(Date.now()), interval),
+      cancel: (id: number) => window.clearTimeout(id),
     }
   }
 
@@ -155,23 +176,15 @@ export default class Video {
    * 取消逐帧绘制
    */
   private cancelDrawFrame () {
-    const { animationId, config } = this
-    if (!animationId) {
+    this.animationGeneration++
+    // 保存实际调度器的取消函数，避免 play(config) 改变配置后取消到错误的队列。
+    try {
+      if (this.animationId !== null) this.cancelAnimation?.(this.animationId)
+    } finally {
+      this.animationId = null
+      this.cancelAnimation = null
       this.playing = false
-      return
     }
-
-    const cAF = getCancelAnimationFrame()
-    if (this.video?.cancelVideoFrameCallback && config.videoFrame) {
-      this.video.cancelVideoFrameCallback(animationId)
-    } else if (cAF) {
-      cAF(animationId)
-    } else {
-      window.clearTimeout(animationId)
-    }
-
-    this.animationId = 0
-    this.playing = false
   }
   /**
    * 播放
@@ -179,19 +192,27 @@ export default class Video {
   public async play (config?: IOptionalConfig) {
     videoExists(this.video)
     config && this.setConfig(config)
+    const video = this.video
+    const requestId = ++this.playRequestId
   
     try {
-      const res = await this.video.play()
+      const res = await video.play()
+      if (this.destroyed || requestId !== this.playRequestId || video !== this.video || video.paused || video.ended) return res
+      this.cancelDrawFrame()
+      this.playing = true
       if (this.renderVideoDirectly) {
         this.setNativeVideoVisible(true)
-        this.playing = true
       } else {
         this.drawFrame()
       }
       return res
     } catch (error) {
-      this.config.onError?.(error)
-      throw error
+      try {
+        if (!this.destroyed && requestId === this.playRequestId) this.config?.onError?.(error)
+      } finally {
+        // 业务回调异常不能替换调用方需要处理的原生播放错误。
+        throw error
+      }
     }
   }
   /**
@@ -200,12 +221,9 @@ export default class Video {
   public pause () {
     videoExists(this.video)
   
+    this.playRequestId++
+    this.cancelDrawFrame()
     this.video.pause()
-    if (this.renderVideoDirectly) {
-      this.playing = false
-    } else {
-      this.cancelDrawFrame()
-    }
   }
   /**
    * 重置播放
@@ -218,6 +236,9 @@ export default class Video {
    * @param playbackRate 倍速
    */
   public setSrc (src: string) {
+    if (this.destroyed) throw new Error('[alpha-video-player-js]: player has been destroyed.')
+    this.playRequestId++
+    this.cancelDrawFrame()
     this.canPlay = false
     this.onCanPlayTimes = 1
     this.config.src = src
@@ -340,10 +361,15 @@ export default class Video {
     const { config } = this
     this.canPlay = true
 
-    if (this.renderVideoDirectly) {
-      config.autoShow && this.setNativeVideoVisible(true)
-    } else {
-      config.autoShow && this.drawFrameOnce()
+    try {
+      if (this.renderVideoDirectly) {
+        config.autoShow && this.setNativeVideoVisible(true)
+      } else {
+        config.autoShow && this.drawFrameOnce()
+      }
+    } catch (error) {
+      this.onError(error)
+      return
     }
 
     // video canplay 回调会循环触发，此处保证用户 onCanPlay 回调仅首次执行
@@ -367,16 +393,25 @@ export default class Video {
    */
   private onPause () {
     const { config } = this
-    config.onPause && config.onPause()
+    if (this.video?.paused) {
+      this.playRequestId++
+      this.cancelDrawFrame()
+    }
+    config?.onPause?.()
   }
   /**
    * 视频播放结束触发
    */
   protected onEnded () {
     const { config, video } = this
+    this.playRequestId++
     video.currentTime = 0
     this.cancelDrawFrame()
-    config.onEnded && config.onEnded()
+    try {
+      config.onEnded?.()
+    } finally {
+      if (config.autoDestroy) this.destroy()
+    }
   }
   /**
    * 原生视频模式通过可见性模拟 canvas 的 autoShow / autoClear 行为。
@@ -389,40 +424,65 @@ export default class Video {
   /**
    * 视频播放出错触发
    */
-  private onError (e: Event) {
+  protected onError (e: unknown) {
     const { config, video } = this
+    if (!config || this.destroyed) return
     if (config.debug) {
       console.error(video?.error ?? e)
     }
-    config.onError?.(e)
-    this.destroy()
+    try {
+      config.onError?.(e)
+    } finally {
+      this.destroy()
+    }
   }
   /**
    * 销毁视频
    */
-  protected destroy () {
-    try {
-      const { config } = this    
-      this.cancelDrawFrame()
-      this.removeEvent()
-      if (this.video) {
-        this.video.pause()
-        this.video.src = ''
-        this.video.load()
-        this.video.parentNode?.removeChild(this.video)
-      }
-      
-      config?.onDestroy?.()
-      this.config = null
-      this.container = null
-      this.video = null
-      this.animationId = 0
-    } catch (e) {
-      if (this.config?.debug) {
-        console.error('[alpha-video-player-js] destroy error:', e)
+  public destroy (notify = true) {
+    if (this.destroyed) return
+    this.destroyed = true
+    this.playRequestId++
+    const { config, video, canvas } = this
+    let cleanupError: unknown
+    const cleanup = (task: () => void) => {
+      try {
+        task()
+      } catch (error) {
+        cleanupError ??= error
       }
     }
+
+    cleanup(() => this.cancelDrawFrame())
+    cleanup(() => this.removeEvent())
+    cleanup(() => {
+      if (video) {
+        video.pause()
+        video.removeAttribute('src')
+        video.load()
+      }
+    })
+    cleanup(() => video?.parentNode?.removeChild(video))
+    cleanup(() => this.releaseRenderResources())
+    cleanup(() => canvas?.parentNode?.removeChild(canvas))
+    cleanup(() => {
+      if (canvas) canvas.width = canvas.height = 0
+    })
+
+    this.config = null
+    this.container = null
+    this.video = null
+    this.canvas = null
+    this.canPlay = false
+
+    // 回调最后执行，重入 destroy 或抛错均不会中断资源回收。
+    if (notify) cleanup(() => config?.onDestroy?.())
+    if (cleanupError && config?.debug) {
+      console.error('[alpha-video-player-js] destroy error:', cleanupError)
+    }
   }
+
+  protected releaseRenderResources () {}
   /**
    * 绑定实例
    */

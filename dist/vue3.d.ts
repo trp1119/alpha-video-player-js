@@ -242,6 +242,7 @@ declare const _default: vue.DefineComponent<vue.ExtractPropTypes<{
 declare class Render {
     private render;
     constructor(config: IConfig);
+    private getRenderer;
     get playing(): boolean;
     get loop(): boolean;
     play(config?: IOptionalConfig): Promise<void>;

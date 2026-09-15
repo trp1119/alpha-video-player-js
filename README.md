@@ -124,7 +124,15 @@ Callbacks: `onInitSuccess`, `onInitError`, `onLoad`, `onCanPlay`, `onPlay`, `onL
 | `setPlaybackRate(rate)` | Changes playback speed. |
 | `destroy()` | Releases DOM, canvas, and rendering resources. Do not reuse the instance afterward. |
 
-`play()` rejects with the browser's original error (for example, a `DOMException` from autoplay restrictions) and also invokes `onError` with that same value. Media load/decode failures are delivered through `onError` and then destroy the instance.
+`play()` rejects with the browser's original error (for example, a `DOMException` from autoplay restrictions). The current play request also invokes `onError` with that value; requests superseded by pause, source changes, destruction, or a newer play request do not deliver stale error callbacks. Media load/decode failures and frame-rendering errors are delivered through `onError` and then destroy the instance.
+
+### Multiple players on one page
+
+Create each player with its own container (or mount separate framework components). Video elements, callbacks, render resources, and frame loops belong to their instances. Pausing or destroying one player does not stop another. Repeated `play()` calls maintain one frame loop; `pause()`, `setSrc()`, and `destroy()` invalidate pending playback starts. Call `play()` again after changing the source when playback is desired.
+
+Each WebGL player allocates one context on its output canvas. If WebGL returns no context, the same canvas is used for Canvas 2D. A `webglcontextlost` event is forwarded to `onError`, after which the affected player is destroyed; it does not automatically restore or switch renderers mid-playback. Remount the component or create a new core instance to retry. Initialization failures clean up partial resources before invoking `onInitError` (or throwing if no handler is provided).
+
+`destroy()` is idempotent and calls `onDestroy` only after resource cleanup. Browser GPU-context and video-decoder limits still apply: pause offscreen effects, destroy unused instances, and measure concurrency on target devices. The SDK does not impose or guarantee a universal instance limit.
 
 ## Framework components
 
@@ -215,6 +223,7 @@ If you need both a framework ref and the core instance type, import them from th
 ```bash
 npm run dev    # Watch with Rollup
 npm run build  # Production bundles and declarations
+npm test       # Build, then run lifecycle regressions (Node.js 18+)
 ```
 
 ## License

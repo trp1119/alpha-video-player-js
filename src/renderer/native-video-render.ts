@@ -6,27 +6,12 @@ import Video from './video'
  */
 export default class NativeVideoRender extends Video {
   constructor (config: IConfig) {
-    const { onInitSuccess, onInitError } = config
-    try {
-      super(config, true)
-      onInitSuccess?.()
-    } catch (e: any) {
-      if (onInitError) {
-        onInitError(e)
-      } else {
-        throw e
-      }
-    }
+    super(config, true)
   }
 
   protected onEnded () {
     const { config } = this
     config.autoClear && this.setNativeVideoVisible(false)
     super.onEnded()
-    config.autoDestroy && this.destroy()
-  }
-
-  public destroy () {
-    super.destroy()
   }
 }

@@ -93,7 +93,17 @@ player.setPlaybackRate(rate)
 player.destroy()
 ```
 
-`play()` 失败时会 reject 浏览器的原始错误，并以相同值调用 `onError`。媒体加载、解码或跨域失败也会通过 `onError` 上报，然后销毁实例。`destroy()` 后不要复用该实例。
+`play()` 失败时会 reject 浏览器的原始错误，当前有效请求还会以相同值调用 `onError`。被暂停、换源、销毁或后续播放请求取代的旧请求不再触发过期错误回调。媒体加载、解码、跨域或逐帧渲染失败会通过 `onError` 上报，然后销毁实例。`destroy()` 后不要复用该实例。
+
+### 同页多实例
+
+每个播放器使用独立容器，或分别挂载框架组件。video、事件、渲染资源和帧循环均归各自实例所有，暂停或销毁一个不会停止另一个。重复调用 `play()` 只保留一个帧循环；`pause()`、`setSrc()`、`destroy()` 会使尚未完成的播放启动请求失效。换源后如需播放，重新调用 `play()`。
+
+每个 WebGL 播放器只在输出画布上申请一个上下文。WebGL 返回空上下文时，同一画布回退到 Canvas 2D。浏览器触发 `webglcontextlost` 时，SDK 通过 `onError` 传出该事件并销毁受影响的实例，不在播放中自动恢复或切换渲染器；需要重试时重新创建实例或挂载组件。初始化失败会先清理部分资源，再调用 `onInitError`；未提供回调时抛出异常。
+
+`destroy()` 可重复调用，`onDestroy` 只在资源清理完成后执行一次。浏览器的 GPU 上下文和视频解码器仍有设备相关限制，建议暂停不可见动效、销毁不用的实例，并在目标设备验证并发量。SDK 不设定或保证统一的最大实例数量。
+
+实现问题与验证边界见[多实例隐患分析与修复记录](./docs/multi-instance-lifecycle.md)。
 
 ## 框架组件
 
@@ -147,6 +157,7 @@ React 组件额外支持 `className` 与 `style`。`src`、`muted`、`loop`、`p
 ```bash
 npm run dev
 npm run build
+npm test       # 先构建再运行生命周期回归（Node.js 18+）
 ```
 
 ## 许可证

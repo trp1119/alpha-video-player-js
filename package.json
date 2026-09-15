@@ -1,6 +1,6 @@
 {
   "name": "alpha-video-player-js",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "Web 视频动画特效播放 sdk",
   "main": "dist/alpha-video-player-js.js",
   "types": "dist/alpha-video-player-js.d.ts",
@@ -26,6 +26,7 @@
   "scripts": {
     "dev": "rollup -c -w",
     "build": "cross-env NODE_ENV=production rollup -c",
+    "test": "npm run build && node --test tests/*.test.mjs",
     "release": "bash ./scripts/release.sh",
     "postpublish": "git push && git push --tags"
   },

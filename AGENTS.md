@@ -102,9 +102,9 @@ shaders/*.glsl ← 仅被 WebGLRender 引用
 
 ```
 alphaScale === 0 → NativeVideoRender
-alphaScale > 0   → supportWebGL()  → true  → WebGLRender
-                                  → false → supportCanvas2d() → true  → CanvasRender
-                                                                  → false → 抛出异常
+alphaScale > 0   → 创建正式 canvas → 获取 WebGL 上下文成功 → WebGLRender（复用该上下文）
+                                  → 返回 null → 同一 canvas 获取 2D → CanvasRender
+                                                                  → 失败 → 清理并报告初始化错误
 ```
 
 ### 5.3 帧循环策略（`Video.initAdaptAnimation`）
@@ -114,6 +114,8 @@ alphaScale > 0   → supportWebGL()  → true  → WebGLRender
 1. `requestVideoFrameCallback`（需 `config.videoFrame = true` 且浏览器支持）
 2. `requestAnimationFrame`（可选 `fps` 限帧）
 3. `setTimeout` 兜底
+
+调度与取消函数成对保存；`animationGeneration` 使旧回调失效，`playRequestId` 使晚到的播放请求失效。回调 ID 允许为 `0`，使用 `null` 表示没有待执行回调。`fps` 按时间间隔限帧，不假定显示器固定为 60Hz。
 
 ### 5.4 autoResize 自适应
 
@@ -164,8 +166,6 @@ export type IAlphaVideoPlayer = InstanceType<typeof Render>
 | 函数 | 作用 |
 |------|------|
 | `getDpr()` | 获取设备像素比，SSR 安全 |
-| `supportCanvas2d()` | 检测 Canvas 2D 支持 |
-| `supportWebGL()` | 检测 WebGL 支持 |
 | `initCanvas(container, w?, h?)` | 创建 canvas 元素并插入容器，按 DPR 设置像素尺寸 |
 | `resolveAlphaScale(alphaScale)` | 校验并归一化 `0 ~ 1` 的 Alpha 缩放比例 |
 | `computeLayoutRects(orientation, side, alphaScale, alphaAlign)` | 计算 RGB/Alpha 归一化区域 |
@@ -192,7 +192,8 @@ export type IAlphaVideoPlayer = InstanceType<typeof Render>
 **关键设计**：
 
 - `drawFrameOnce()` 是空方法，由子类覆写实现具体渲染
-- `drawFrame()` 调用 `drawFrameOnce()` 后通过 `adaptAnimation` 递归自身
+- `drawFrame()` 在基类内维护唯一循环，调用子类 `drawFrameOnce()`；每次续订前检查实例状态及循环代次
+- `destroy()` 统一停止播放、移除事件、调用子类 `releaseRenderResources()`、清理 DOM，最后执行 `onDestroy`；可重入和重复调用
 - `onCanvasResized()` 是空方法，子类覆写以响应 canvas 尺寸变化
 - `bindInstance()` 手动绑定 this，确保事件监听器正确引用
 
@@ -208,14 +209,16 @@ export type IAlphaVideoPlayer = InstanceType<typeof Render>
 | `videoWidth / videoHeight` | `number` | protected | 视频原始尺寸 |
 | `canPlay` | `boolean` | protected | video 是否可以播放 |
 | `playing` | `boolean` | public | 当前是否正在播放 |
-| `animationId` | `number` | private | 帧循环 ID（销毁后置 `0`） |
-| `adaptAnimation` | `Function \| null` | private | 帧驱动策略函数 |
+| `animationId` | `number \| null` | private | 帧回调 ID，`null` 表示无回调，`0` 是合法 ID |
+| `cancelAnimation` | `Function \| null` | private | 与实际调度方式匹配的取消函数 |
+| `animationGeneration / playRequestId` | `number` | private | 分别使旧帧回调、异步播放结果失效 |
+| `destroyed` | `boolean` | private | 幂等销毁与异步回调守卫 |
 
 ### 6.5 `renderer/webgl-render.ts` — WebGL 渲染
 
 **渲染流程**：
 
-1. 构造时：获取 WebGL 上下文 → 编译着色器 → 创建程序 → 初始化纹理 → 设置顶点缓冲区
+1. 构造时：接收门面创建的 canvas 与 WebGL 上下文 → 编译着色器 → 创建程序 → 初始化纹理 → 设置顶点缓冲区
 2. 每帧（`drawFrameOnce`）：`gl.clear` → `gl.texImage2D`（将 video 帧上传为纹理）→ `gl.drawArrays` 绘制四边形
 
 **WebGL 管线**：
@@ -229,6 +232,8 @@ fragment.glsl：rgb = texture(rgbCoord).rgb, alpha = texture(alphaCoord).r
 ```
 
 **销毁**：分离/删除着色器 → 删除纹理 → 删除缓冲区 → 删除程序 → loseContext 释放资源
+
+`releaseRenderResources()` 支持只初始化了部分资源的清理。`webglcontextlost` 通过现有 `onError` 上报并销毁该实例，不自动恢复；销毁前移除该监听，避免主动 loseContext 被当作播放错误。
 
 ### 6.5.1 `renderer/native-video-render.ts` — 原生视频渲染
 
@@ -261,8 +266,7 @@ fragment.glsl：rgb = texture(rgbCoord).rgb, alpha = texture(alphaCoord).r
 ```
 用户 new Render(config)
   │
-  ├── 检测 WebGL / Canvas2D 能力
-  ├── 创建 canvas 插入 container
+  ├── 透明视频：创建正式 canvas，并直接选择 WebGL / Canvas2D 上下文
   ├── 若有 src：透明视频创建隐藏 video，普通视频创建可见 video
   │
   └── video 事件驱动：
@@ -274,10 +278,10 @@ fragment.glsl：rgb = texture(rgbCoord).rgb, alpha = texture(alphaCoord).r
   ├── video.play()
   └── drawFrame() 启动帧循环
         ├── drawFrameOnce() ← 子类实现真正的渲染
-        └── adaptAnimation(drawFrame) 递归
+        └── request(frame) 续订（实际取消函数随循环保存）
   
 用户 pause()  → video.pause() + cancelDrawFrame()
-用户 destroy() → 停止帧循环 → 移除事件 → 清理 video → 清理 GL/Canvas 资源 → 移除 canvas
+用户 destroy() → 使播放请求失效 → 停止帧循环 → 移除事件 → 清理 video → 清理 GL/Canvas 资源 → 移除 canvas → onDestroy
 ```
 
 ## 8. 配置项速查
@@ -319,6 +323,7 @@ fragment.glsl：rgb = texture(rgbCoord).rgb, alpha = texture(alphaCoord).r
 ```bash
 npm run dev      # Rollup 监听模式
 npm run build    # 生产构建（含 terser 压缩）
+npm test         # 构建后执行 tests/lifecycle.test.mjs（Node.js 18+，模拟 DOM/GPU）
 npm run release  # 交互式发版（patch/minor/major → build → tag → publish）
 ```
 
@@ -376,7 +381,8 @@ npm run release  # 交互式发版（patch/minor/major → build → tag → pub
 - **Canvas 2D 降级**：逐像素遍历性能远低于 WebGL，仅在 WebGL 不可用时启用。现代浏览器几乎全覆盖 WebGL。
 - **Android WebView poster**：初始化 video 时先设置 `crossOrigin`，再设置用户 `poster` 或透明兜底，最后设置 `src`；WebGL / Canvas 仅在 `readyState >= HAVE_CURRENT_DATA` 且视频尺寸有效时读取帧。
 - **video 挂载位置**：透明视频的隐藏 video 挂在 `document.body`（`width: 0; height: 0`），避免受容器 CSS 影响；`alphaScale=0` 时原生 video 直接挂载到 container。销毁时统一通过 `parentNode?.removeChild` 清理。
-- **destroy 后的空安全**：`destroy()` 将核心引用（`config`、`video`、`canvas`、GL 资源等）置 `null`，类型已标注 `| null`。销毁后不应再调用实例方法。
+- **destroy 后的空安全**：`destroy()` 将核心引用（`config`、`video`、`canvas`、GL 资源等）置 `null`，类型已标注 `| null`。允许重复销毁，其他操作应创建新实例。晚到的播放请求仍按原始 Promise 结果完成，但不重启渲染或向已销毁实例发回调。
+- **初始化回调**：门面 `Render` 统一调用 `onInitSuccess/onInitError`，子渲染器仅负责初始化和失败清理；失败不发 `onDestroy`。
 
 ## 12. Vue 组件（`alpha-video-player-js/vue3`）模板侧注意
 
