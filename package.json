@@ -45,7 +45,7 @@
     "type": "git",
     "url": "git+https://github.com/trp1119/alpha-video-player-js.git"
   },
-  "homepage": "https://trp1119.github.io/alpha-video-player-js-demo",
+  "homepage": "https://alpha-video-player-js.musecode.dev",
   "files": [
     "dist",
     "package.json"
