@@ -1,5 +1,5 @@
-import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE, VIDEO_READY_STATE_CURRENT_DATA } from './constants'
-import type { IAlphaAlign, IOrientation, ISide } from './type'
+import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE, DEFAULT_CONFIG, VIDEO_READY_STATE_CURRENT_DATA } from './constants'
+import type { IAlphaAlign, IConfig, IOptionalConfig, IOrientation, ISide } from './type'
 
 interface ILayoutRect {
   x: number
@@ -52,6 +52,25 @@ export const resolveAlphaScale = (alphaScale = DEFAULT_ALPHA_SCALE) => {
     throw new Error('[alpha-video-player-js]: alphaScale must be a finite number between 0 and 1.')
   }
   return alphaScale
+}
+
+export const resolvePlayerConfig = (config: IConfig | IOptionalConfig, current?: IConfig | null) => {
+  const resolved = Object.assign({}, DEFAULT_CONFIG, current || {}, config) as IConfig
+  resolved.playbackRate = resolved.playbackRate ?? DEFAULT_CONFIG.playbackRate
+  resolved.muted = resolved.muted ?? DEFAULT_CONFIG.muted
+  resolved.loop = resolved.loop ?? DEFAULT_CONFIG.loop
+  resolved.fps = resolved.fps ?? DEFAULT_CONFIG.fps
+  resolved.orientation = resolved.orientation ?? DEFAULT_CONFIG.orientation
+  resolved.side = resolved.side ?? DEFAULT_CONFIG.side
+  resolved.alphaScale = resolveAlphaScale(resolved.alphaScale)
+  resolved.alphaAlign = resolved.alphaAlign ?? DEFAULT_ALPHA_ALIGN
+  resolved.autoShow = resolved.autoShow ?? DEFAULT_CONFIG.autoShow
+  resolved.autoClear = resolved.autoClear ?? DEFAULT_CONFIG.autoClear
+  resolved.autoDestroy = resolved.autoDestroy ?? DEFAULT_CONFIG.autoDestroy
+  resolved.autoResize = resolved.autoResize ?? DEFAULT_CONFIG.autoResize
+  resolved.debug = resolved.debug ?? DEFAULT_CONFIG.debug
+  resolved.videoFrame = resolved.videoFrame ?? DEFAULT_CONFIG.videoFrame
+  return resolved
 }
 
 /**

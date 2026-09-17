@@ -72,7 +72,7 @@ function environment({ webgl = true, canvas2d = true, driver = 'raf', failTextur
       if (kind === 'experimental-webgl') return null
       if (kind === 'webgl' && !webgl || kind === '2d' && !canvas2d) return null
       this.contextType = kind
-      const state = { canvas: this, kind, released: false, draws: 0, resources: new Set() }
+      const state = { canvas: this, kind, released: false, draws: 0, bufferUploads: 0, resources: new Set() }
       contexts.push(state)
       this.context = new Proxy({}, {
         get(_target, key) {
@@ -86,6 +86,7 @@ function environment({ webgl = true, canvas2d = true, driver = 'raf', failTextur
           if (key === 'texImage2D' && failDraw) return () => { throw new Error('frame upload failed') }
           if (key === 'getImageData') return () => ({ data: new Uint8ClampedArray(state.canvas.width * state.canvas.height * 4) })
           if (key === 'drawArrays' || key === 'putImageData') return () => { state.draws++ }
+          if (key === 'bufferData') return () => { state.bufferUploads++ }
           if (key.startsWith('create')) return () => {
             if (key === 'createTexture' && failTexture) throw new Error('texture allocation failed')
             if (key === nullResource) return null
@@ -138,6 +139,10 @@ function deferred() {
   let resolve, reject
   const promise = new Promise((yes, no) => { resolve = yes; reject = no })
   return { promise, resolve, reject }
+}
+
+async function flushPromises(times = 6) {
+  while (times-- > 0) await Promise.resolve()
 }
 
 test('each transparent instance owns exactly one WebGL context, all are released', () => {
@@ -258,11 +263,16 @@ test('native pause events stop drawing', async () => {
 
 test('changing frame driver cancels callbacks using the original driver', async () => {
   const env = environment({ driver: 'video' })
-  const { player } = env.create()
+  const { player, video, container } = env.create()
+  const canvas = container.children[0]
   await player.play()
   await player.play({ videoFrame: false })
   assert.equal(env.pending.size, 1)
   assert.equal([...env.pending.values()][0].kind, 'raf')
+  assert.equal(env.videos.length, 1)
+  assert.equal(env.videos[0], video)
+  assert.equal(env.contexts.length, 1)
+  assert.equal(container.children[0], canvas)
   player.destroy()
   assert.equal(env.pending.size, 0)
 })
@@ -358,6 +368,302 @@ test('native video instances allocate no canvas or frame callbacks', async () =>
   a.player.destroy()
   assert.equal(b.player.playing, true)
   b.player.destroy()
+})
+
+test('updateConfig applies media options and source without recreating the renderer', () => {
+  const env = environment()
+  const { player, video, container } = env.create()
+  const canvas = container.children[0]
+
+  player.updateConfig({
+    src: 'next.mp4',
+    muted: false,
+    loop: true,
+    playbackRate: 1.5,
+    autoClear: false,
+  })
+
+  assert.equal(env.contexts.length, 1)
+  assert.equal(container.children[0], canvas)
+  assert.equal(env.videos.at(-1), video)
+  assert.equal(video.src, 'next.mp4')
+  assert.equal(video.muted, false)
+  assert.equal(video.loop, true)
+  assert.equal(video.playbackRate, 1.5)
+  player.destroy()
+})
+
+test('rapid transparent source updates resume only the latest source', async () => {
+  const env = environment()
+  const { player, video } = env.create({ alphaScale: 1 })
+  await player.play()
+
+  player.updateConfig({ src: 'first.mp4' })
+  player.updateConfig({ src: 'second.mp4' })
+  await flushPromises()
+  assert.equal(player.playing, false)
+  assert.equal(video.src, 'second.mp4')
+
+  video.dispatchEvent(new Event('loadedmetadata'))
+  video.dispatchEvent(new Event('canplaythrough'))
+  await flushPromises()
+  assert.equal(video.src, 'second.mp4')
+  assert.equal(player.playing, true)
+  assert.equal(env.pending.size, 1)
+  player.destroy()
+})
+
+test('updateConfig switches between transparent layouts without exposing renderer recreation', async () => {
+  const env = environment()
+  let destroys = 0, inits = 0
+  const { player, container } = env.create({
+    alphaScale: 1,
+    onInitSuccess: () => inits++,
+    onDestroy: () => destroys++,
+  })
+  const firstContext = env.contexts[0]
+  const firstVideo = env.videos[0]
+  const firstCanvas = container.children[0]
+
+  await player.play()
+
+  player.updateConfig({ alphaScale: 0.5, alphaAlign: 'end' })
+
+  assert.equal(firstContext.released, false)
+  assert.equal(firstContext.bufferUploads, 2)
+  assert.equal(env.contexts.length, 1)
+  assert.equal(env.videos.length, 1)
+  assert.equal(env.videos.at(-1), firstVideo)
+  assert.equal(container.children[0], firstCanvas)
+  assert.equal(container.children.length, 1)
+  assert.equal(document.body.children.length, 1)
+  assert.equal(destroys, 0)
+  assert.equal(inits, 1)
+  assert.equal(player.playing, true)
+  assert.equal(env.pending.size, 1)
+  player.destroy()
+  assert.equal(destroys, 1)
+})
+
+test('size updates resize the existing transparent canvas without reallocating WebGL', () => {
+  const env = environment()
+  const { player, container, video } = env.create({ alphaScale: 0.5, autoResize: false })
+  const canvas = container.children[0]
+  const context = env.contexts[0]
+
+  player.updateConfig({ width: 10, height: 8 })
+
+  assert.equal(container.children[0], canvas)
+  assert.equal(canvas.width, 10)
+  assert.equal(canvas.height, 8)
+  assert.equal(env.contexts.length, 1)
+  assert.equal(env.contexts[0], context)
+  assert.equal(env.videos.at(-1), video)
+  player.destroy()
+})
+
+test('updateConfig keeps the old output visible until a cross-mode replacement is playable', async () => {
+  const env = environment()
+  const { player, container } = env.create({ alphaScale: 1 })
+  const oldCanvas = container.children[0]
+  const oldContext = env.contexts[0]
+
+  await player.play()
+
+  player.updateConfig({ src: 'native.mp4', alphaScale: 0 })
+  const nativeVideo = env.videos.at(-1)
+  assert.equal(env.contexts.length, 1)
+  assert.equal(oldContext.released, false)
+  assert.equal(container.children.includes(oldCanvas), true)
+  assert.equal(container.children.includes(nativeVideo), true)
+  assert.notEqual(oldCanvas.style.visibility, 'hidden')
+  assert.equal(nativeVideo.style.visibility, 'hidden')
+  assert.equal(nativeVideo.style.position, 'absolute')
+
+  nativeVideo.dispatchEvent(new Event('loadedmetadata'))
+  nativeVideo.dispatchEvent(new Event('canplaythrough'))
+  await flushPromises()
+
+  assert.equal(oldCanvas.parentNode, null)
+  assert.equal(oldContext.released, true)
+  assert.equal(container.children.length, 1)
+  assert.equal(container.children[0], nativeVideo)
+  assert.equal(nativeVideo.style.visibility, 'visible')
+  assert.equal(nativeVideo.style.position, '')
+  assert.equal(player.playing, true)
+
+  player.updateConfig({ src: 'alpha-lite.mp4', alphaScale: 0.5, alphaAlign: 'start' })
+  const transparentVideo = env.videos.at(-1)
+  assert.equal(env.contexts.length, 2)
+  const nextCanvas = container.children.find(child => child.tagName === 'canvas')
+  assert.equal(nativeVideo.parentNode, container)
+  assert.equal(nextCanvas.style.visibility, 'hidden')
+  assert.equal(nextCanvas.style.position, 'absolute')
+
+  transparentVideo.dispatchEvent(new Event('loadedmetadata'))
+  transparentVideo.dispatchEvent(new Event('canplaythrough'))
+  await flushPromises()
+
+  assert.equal(nativeVideo.parentNode, null)
+  assert.equal(container.children.length, 1)
+  assert.equal(container.children[0], nextCanvas)
+  assert.equal(nextCanvas.style.visibility, 'visible')
+  assert.equal(nextCanvas.style.position, '')
+  assert.equal(document.body.children[0], transparentVideo)
+  assert.equal(player.playing, true)
+  player.destroy()
+})
+
+test('rapid cross-mode updates discard the hidden candidate and keep the visible renderer', async () => {
+  const env = environment()
+  const { player, container, video: originalVideo } = env.create({ alphaScale: 1 })
+  const originalCanvas = container.children[0]
+  const originalContext = env.contexts[0]
+  await player.play()
+
+  player.updateConfig({ src: 'native.mp4', alphaScale: 0 })
+  const nativeCandidate = env.videos.at(-1)
+  assert.equal(nativeCandidate.style.visibility, 'hidden')
+
+  player.updateConfig({ src: 'next-alpha.mp4', alphaScale: 0.5 })
+  await flushPromises()
+
+  assert.equal(nativeCandidate.parentNode, null)
+  assert.equal(container.children.length, 1)
+  assert.equal(container.children[0], originalCanvas)
+  assert.equal(originalContext.released, false)
+  assert.equal(env.contexts.length, 1)
+  assert.equal(env.videos[0], originalVideo)
+  assert.equal(originalVideo.src, 'next-alpha.mp4')
+  assert.equal(player.playing, true)
+  player.destroy()
+})
+
+test('cross-mode media failure rolls back to the previous visible renderer', async () => {
+  const env = environment()
+  const errors = []
+  const { player, container } = env.create({ alphaScale: 1, onError: error => errors.push(error) })
+  const oldCanvas = container.children[0]
+  const oldContext = env.contexts[0]
+  await player.play()
+
+  player.updateConfig({ src: 'native.mp4', alphaScale: 0 })
+  const candidate = env.videos.at(-1)
+  const mediaError = new Event('error')
+  candidate.dispatchEvent(mediaError)
+  await flushPromises()
+
+  assert.deepEqual(errors, [mediaError])
+  assert.equal(candidate.parentNode, null)
+  assert.equal(container.children.length, 1)
+  assert.equal(container.children[0], oldCanvas)
+  assert.equal(oldContext.released, false)
+  assert.equal(player.playing, true)
+  player.destroy()
+})
+
+test('native source updates use a hidden candidate instead of blanking the visible video', async () => {
+  const env = environment()
+  const { player, container, video: oldVideo } = env.create({ alphaScale: 0 })
+  await player.play()
+
+  player.updateConfig({ src: 'next-native.mp4' })
+  const nextVideo = env.videos.at(-1)
+  assert.notEqual(nextVideo, oldVideo)
+  assert.equal(oldVideo.parentNode, container)
+  assert.equal(nextVideo.parentNode, container)
+  assert.equal(nextVideo.style.visibility, 'hidden')
+  assert.notEqual(oldVideo.style.visibility, 'hidden')
+
+  nextVideo.dispatchEvent(new Event('loadedmetadata'))
+  nextVideo.dispatchEvent(new Event('canplaythrough'))
+  await flushPromises()
+
+  assert.equal(oldVideo.parentNode, null)
+  assert.equal(container.children.length, 1)
+  assert.equal(container.children[0], nextVideo)
+  assert.equal(nextVideo.style.visibility, 'visible')
+  assert.equal(player.playing, true)
+  player.destroy()
+})
+
+test('paused transitions retain the previous frame until play activates the candidate', async () => {
+  const env = environment()
+  const { player, container } = env.create({ alphaScale: 1, autoShow: false })
+  const oldCanvas = container.children[0]
+  await player.play()
+  player.pause()
+
+  player.updateConfig({ src: 'native.mp4', alphaScale: 0 })
+  const candidate = env.videos.at(-1)
+  candidate.dispatchEvent(new Event('loadedmetadata'))
+  candidate.dispatchEvent(new Event('canplaythrough'))
+  await flushPromises()
+
+  assert.equal(oldCanvas.parentNode, container)
+  assert.equal(candidate.style.visibility, 'hidden')
+  assert.equal(player.playing, false)
+
+  await player.play()
+  assert.equal(oldCanvas.parentNode, null)
+  assert.equal(candidate.parentNode, container)
+  assert.equal(candidate.style.visibility, 'visible')
+  assert.equal(player.playing, true)
+  player.destroy()
+})
+
+test('renderer replacement invalidates a pending play from the old renderer', async () => {
+  const env = environment()
+  const { player, video: oldVideo } = env.create({ alphaScale: 1 })
+  const wait = deferred()
+  oldVideo.playResult = wait.promise
+  const oldPlay = player.play()
+
+  player.updateConfig({ src: 'native.mp4', alphaScale: 0 })
+  const nativeVideo = env.videos.at(-1)
+  const newPlay = player.play()
+  nativeVideo.dispatchEvent(new Event('loadedmetadata'))
+  nativeVideo.dispatchEvent(new Event('canplaythrough'))
+  wait.resolve()
+  await Promise.all([oldPlay, newPlay])
+
+  assert.equal(oldVideo.parentNode, null)
+  assert.equal(nativeVideo.paused, false)
+  assert.equal(player.playing, true)
+  assert.equal(env.pending.size, 0)
+  player.destroy()
+})
+
+test('play(config) can change renderer mode and still starts exactly one loop', async () => {
+  const env = environment()
+  const { player } = env.create({ alphaScale: 0 })
+
+  const playing = player.play({ src: 'alpha.mp4', alphaScale: 0.5 })
+  const video = env.videos.at(-1)
+  video.dispatchEvent(new Event('loadedmetadata'))
+  video.dispatchEvent(new Event('canplaythrough'))
+  await playing
+
+  assert.equal(env.contexts.length, 1)
+  assert.equal(document.body.children.length, 1)
+  assert.equal(env.pending.size, 1)
+  assert.equal(player.playing, true)
+  player.destroy()
+})
+
+test('invalid structural updates leave the current renderer usable', async () => {
+  const env = environment()
+  const { player, video, container } = env.create()
+  const canvas = container.children[0]
+
+  assert.throws(() => player.updateConfig({ alphaScale: 2 }), /alphaScale/)
+  assert.equal(container.children[0], canvas)
+  assert.equal(env.videos.at(-1), video)
+  assert.equal(env.contexts.length, 1)
+  assert.equal(env.contexts[0].released, false)
+  await player.play()
+  assert.equal(player.playing, true)
+  player.destroy()
 })
 
 test('onError throwing on context loss still releases the affected instance', async () => {

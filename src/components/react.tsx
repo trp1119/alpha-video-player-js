@@ -7,7 +7,7 @@ import React, {
 import Render from '../index'
 import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE } from '../constants'
 import type { IAlphaVideoPlayerRef } from '../framework-ref'
-import type { IAlphaAlign, IOrientation, ISide } from '../type'
+import type { IAlphaAlign, IOrientation, ISide, IUpdateConfig } from '../type'
 
 export interface IAlphaVideoPlayerProps {
   src?: string
@@ -69,12 +69,12 @@ const AlphaVideoPlayer = forwardRef<IAlphaVideoPlayerRef, IAlphaVideoPlayerProps
         side: p.side ?? 'front',
         alphaScale: p.alphaScale ?? DEFAULT_ALPHA_SCALE,
         alphaAlign: p.alphaAlign ?? DEFAULT_ALPHA_ALIGN,
-        videoFrame: p.videoFrame,
-        debug: p.debug,
-        autoShow: p.autoShow,
-        autoClear: p.autoClear,
-        autoDestroy: p.autoDestroy,
-        autoResize: p.autoResize,
+        videoFrame: p.videoFrame ?? false,
+        debug: p.debug ?? false,
+        autoShow: p.autoShow ?? false,
+        autoClear: p.autoClear ?? true,
+        autoDestroy: p.autoDestroy ?? false,
+        autoResize: p.autoResize ?? 'contain',
         onInitSuccess: () => propsRef.current.onInitSuccess?.(),
         onInitError: (e) => propsRef.current.onInitError?.(e),
         onLoad: () => propsRef.current.onLoad?.(),
@@ -94,23 +94,39 @@ const AlphaVideoPlayer = forwardRef<IAlphaVideoPlayerRef, IAlphaVideoPlayerProps
     }, [])
 
     useEffect(() => {
-      if (props.src != null) playerRef.current?.setSrc(props.src)
-    }, [props.src])
-
-    useEffect(() => {
-      playerRef.current?.setMute(props.muted ?? true)
-    }, [props.muted])
-
-    useEffect(() => {
-      playerRef.current?.setLoop(props.loop ?? false)
-    }, [props.loop])
-
-    useEffect(() => {
-      playerRef.current?.setPlaybackRate(props.playbackRate ?? 1)
-    }, [props.playbackRate])
+      const p = propsRef.current
+      const config: IUpdateConfig = {
+        ...(p.src != null ? { src: p.src } : {}),
+        poster: p.poster,
+        width: p.width,
+        height: p.height,
+        crossOrigin: p.crossOrigin,
+        muted: p.muted ?? true,
+        loop: p.loop ?? false,
+        playbackRate: p.playbackRate ?? 1,
+        fps: p.fps,
+        orientation: p.orientation ?? 'landscape',
+        side: p.side ?? 'front',
+        alphaScale: p.alphaScale ?? DEFAULT_ALPHA_SCALE,
+        alphaAlign: p.alphaAlign ?? DEFAULT_ALPHA_ALIGN,
+        videoFrame: p.videoFrame ?? false,
+        debug: p.debug ?? false,
+        autoShow: p.autoShow ?? false,
+        autoClear: p.autoClear ?? true,
+        autoDestroy: p.autoDestroy ?? false,
+        autoResize: p.autoResize ?? 'contain',
+      }
+      playerRef.current?.updateConfig(config)
+    }, [
+      props.src, props.poster, props.width, props.height, props.crossOrigin,
+      props.muted, props.loop, props.playbackRate, props.fps, props.orientation,
+      props.side, props.alphaScale, props.alphaAlign, props.videoFrame, props.debug,
+      props.autoShow, props.autoClear, props.autoDestroy, props.autoResize,
+    ])
 
     useImperativeHandle(ref, () => ({
       play: () => playerRef.current?.play(),
+      updateConfig: (config: IUpdateConfig) => playerRef.current?.updateConfig(config),
       pause: () => playerRef.current?.pause(),
       destroy: () => {
         playerRef.current?.destroy()

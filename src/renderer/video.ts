@@ -1,23 +1,6 @@
-import type { IConfig, IOptionalConfig } from '../type'
-import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE, TRANSPARENT_VIDEO_POSTER } from '../constants'
-import { resizeCanvas, computeDisplayRatio, getDpr, videoExists, getRequestAnimationFrame, getCancelAnimationFrame, resolveAlphaScale } from '../util'
-
-const DEFAULT_CONFIG: Omit<IConfig, 'container' | 'src'> = {
-  playbackRate: 1,
-  muted: true,
-  loop: false,
-  fps: 0,
-  orientation: 'landscape',
-  side: 'front',
-  alphaScale: DEFAULT_ALPHA_SCALE,
-  alphaAlign: DEFAULT_ALPHA_ALIGN,
-  autoShow: false,
-  autoClear: true,
-  autoDestroy: false,
-  autoResize: 'contain',
-  debug: false,
-  videoFrame: false,
-}
+import type { IConfig, IOptionalConfig, IUpdateConfig } from '../type'
+import { TRANSPARENT_VIDEO_POSTER } from '../constants'
+import { resizeCanvas, computeDisplayRatio, getDpr, videoExists, getRequestAnimationFrame, getCancelAnimationFrame, resolvePlayerConfig } from '../util'
 
 export default class Video {
   protected config: IConfig | null
@@ -31,8 +14,13 @@ export default class Video {
   private animationId: number | null = null
   private animationGeneration = 0
   private playRequestId = 0
+  private sourceGeneration = 0
+  private resumeOnReady = false
   private destroyed = false
   private onCanPlayTimes = 1
+  private readyPromise: Promise<void> = Promise.resolve()
+  private resolveReady: (() => void) | null = null
+  private transitionStyle: { position: string, left: string, top: string, zIndex: string } | null = null
   protected canPlay = false
   private cancelAnimation: null | ((id: number) => void) = null
   private renderVideoDirectly = false
@@ -63,16 +51,106 @@ export default class Video {
     return this.video?.loop || false
   }
 
+  public whenReady () {
+    return this.canPlay ? Promise.resolve() : this.readyPromise
+  }
+
+  public setOutputVisible (visible: boolean) {
+    const output = this.renderVideoDirectly ? this.video : this.canvas
+    if (output) output.style.visibility = visible ? 'visible' : 'hidden'
+  }
+
+  public setOutputTransitioning (transitioning: boolean) {
+    const output = this.renderVideoDirectly ? this.video : this.canvas
+    if (!output) return
+    if (transitioning) {
+      if (!this.transitionStyle) {
+        this.transitionStyle = {
+          position: output.style.position || '',
+          left: output.style.left || '',
+          top: output.style.top || '',
+          zIndex: output.style.zIndex || '',
+        }
+      }
+      output.style.position = 'absolute'
+      output.style.left = '0'
+      output.style.top = '0'
+      output.style.zIndex = '1'
+      return
+    }
+    if (!this.transitionStyle) return
+    output.style.position = this.transitionStyle.position
+    output.style.left = this.transitionStyle.left
+    output.style.top = this.transitionStyle.top
+    output.style.zIndex = this.transitionStyle.zIndex
+    this.transitionStyle = null
+  }
+
+  public prepareOutput () {
+    if (!this.renderVideoDirectly && this.canPlay) this.drawFrameOnce()
+  }
+
   private setConfig (config: IConfig | IOptionalConfig) {
     if (!config) return
-    const nextConfig = Object.assign({}, DEFAULT_CONFIG, this.config || {}, config) as IConfig
-    nextConfig.alphaScale = resolveAlphaScale(nextConfig.alphaScale)
-    nextConfig.alphaAlign = nextConfig.alphaAlign || DEFAULT_ALPHA_ALIGN
-    this.config = nextConfig
+    this.config = resolvePlayerConfig(config, this.config)
+  }
+
+  public updateConfig (config: IUpdateConfig) {
+    if (this.destroyed || !this.config) throw new Error('[alpha-video-player-js]: player has been destroyed.')
+    const previous = this.config
+    const wasPlaying = this.playing
+    const sourceChanged = config.src !== undefined && config.src !== previous.src
+    const resumeAfterSourceChange = sourceChanged && (wasPlaying || this.resumeOnReady)
+    const frameDriverChanged = (config.fps !== undefined && config.fps !== previous.fps) ||
+      (config.videoFrame !== undefined && config.videoFrame !== previous.videoFrame)
+    this.setConfig(config)
+    const next = this.config
+
+    if (sourceChanged) this.setSrc(config.src!)
+    if (!this.video) return
+    if (config.muted !== undefined) this.setMute(next.muted!)
+    if (config.loop !== undefined) this.setLoop(next.loop!)
+    if (config.playbackRate !== undefined) this.setPlaybackRate(next.playbackRate!)
+    if (resumeAfterSourceChange) {
+      this.resumeOnReady = true
+      const generation = this.sourceGeneration
+      void this.whenReady().then(() => {
+        if (this.destroyed || generation !== this.sourceGeneration || !this.resumeOnReady) return
+        this.resumeOnReady = false
+        return this.play()
+      }).catch(() => {})
+    }
+    if (frameDriverChanged && !sourceChanged && wasPlaying && !this.renderVideoDirectly && !this.video.paused) {
+      this.cancelDrawFrame()
+      this.playing = true
+      this.drawFrame()
+    }
+    this.onConfigUpdated(previous, next)
+  }
+
+  protected onConfigUpdated (previous: IConfig, next: IConfig) {
+    if (this.video && previous.poster !== next.poster) {
+      this.video.poster = next.poster || TRANSPARENT_VIDEO_POSTER
+    }
+    if (
+      previous.width !== next.width || previous.height !== next.height ||
+      previous.autoResize !== next.autoResize || previous.orientation !== next.orientation ||
+      previous.alphaScale !== next.alphaScale || previous.alphaAlign !== next.alphaAlign
+    ) {
+      this.resizeOutput()
+    }
+    if (previous.autoShow !== next.autoShow && this.video) {
+      if (this.renderVideoDirectly) {
+        this.setNativeVideoVisible(this.playing || !!next.autoShow)
+      } else if (next.autoShow && this.canPlay) {
+        this.drawFrameOnce()
+      }
+    }
   }
 
   private initVideo () {
     const { src, poster, playbackRate, muted, loop, crossOrigin } = this.config
+    this.resetReady()
   
     const video = this.video = document.createElement('video')
     video.crossOrigin = crossOrigin ?? 'anonymous'
@@ -112,6 +190,13 @@ export default class Video {
     this.bindInstance()
     this.addEvent()
     video.load()
+  }
+
+  private resetReady () {
+    this.resolveReady?.()
+    this.readyPromise = new Promise(resolve => {
+      this.resolveReady = resolve
+    })
   }
   /**
    * 绘制一帧
@@ -192,6 +277,7 @@ export default class Video {
   public async play (config?: IOptionalConfig) {
     videoExists(this.video)
     config && this.setConfig(config)
+    this.resumeOnReady = false
     const video = this.video
     const requestId = ++this.playRequestId
   
@@ -222,6 +308,8 @@ export default class Video {
     videoExists(this.video)
   
     this.playRequestId++
+    this.sourceGeneration++
+    this.resumeOnReady = false
     this.cancelDrawFrame()
     this.video.pause()
   }
@@ -238,6 +326,8 @@ export default class Video {
   public setSrc (src: string) {
     if (this.destroyed) throw new Error('[alpha-video-player-js]: player has been destroyed.')
     this.playRequestId++
+    this.sourceGeneration++
+    this.resumeOnReady = false
     this.cancelDrawFrame()
     this.canPlay = false
     this.onCanPlayTimes = 1
@@ -251,6 +341,7 @@ export default class Video {
       return
     }
 
+    this.resetReady()
     this.video.src = src
     this.video.load()
     this.video.currentTime = 0
@@ -304,8 +395,22 @@ export default class Video {
     this.videoWidth = video.videoWidth
     this.videoHeight = video.videoHeight
 
+    this.resizeOutput()
+
+    config.onLoad && config.onLoad()
+  }
+
+  private resizeOutput () {
+    const { video, config, canvas, container } = this
+    if (!video || !config) return
+    const dpr = getDpr()
+    const defaultWidth = config.width || container?.offsetWidth || (canvas ? canvas.width / dpr : video.videoWidth)
+    const defaultHeight = config.height || container?.offsetHeight || (canvas ? canvas.height / dpr : video.videoHeight)
+
+    let newWidth = defaultWidth
+    let newHeight = defaultHeight
+
     if (config.autoResize && (canvas || this.renderVideoDirectly) && video.videoWidth > 0 && video.videoHeight > 0) {
-      const dpr = getDpr()
       const videoRatio = computeDisplayRatio(
         video.videoWidth,
         video.videoHeight,
@@ -313,12 +418,8 @@ export default class Video {
         config.alphaScale,
         config.alphaAlign,
       )
-      const boxWidth = canvas
-        ? canvas.width / dpr
-        : (config.width || this.container?.offsetWidth || video.videoWidth)
-      const boxHeight = canvas
-        ? canvas.height / dpr
-        : (config.height || this.container?.offsetHeight || video.videoHeight)
+      const boxWidth = defaultWidth || video.videoWidth
+      const boxHeight = defaultHeight || video.videoHeight
 
       let fixDimension: 'width' | 'height'
       if (config.autoResize === 'width' || config.autoResize === 'height') {
@@ -329,23 +430,21 @@ export default class Video {
         fixDimension = videoRatio >= boxRatio ? 'width' : 'height'
       }
 
-      const newWidth = fixDimension === 'width' ? boxWidth : Math.round(boxHeight * videoRatio)
-      const newHeight = fixDimension === 'width' ? Math.round(boxWidth / videoRatio) : boxHeight
-
-      const targetW = newWidth * dpr
-      const targetH = newHeight * dpr
-      if (canvas && (targetW !== this.canvasWidth || targetH !== this.canvasHeight)) {
-        resizeCanvas(canvas, newWidth, newHeight)
-        this.canvasWidth = canvas.width
-        this.canvasHeight = canvas.height
-        this.onCanvasResized()
-      } else if (this.renderVideoDirectly) {
-        video.style.width = `${newWidth}px`
-        video.style.height = `${newHeight}px`
-      }
+      newWidth = fixDimension === 'width' ? boxWidth : Math.round(boxHeight * videoRatio)
+      newHeight = fixDimension === 'width' ? Math.round(boxWidth / videoRatio) : boxHeight
     }
 
-    config.onLoad && config.onLoad()
+    const targetW = newWidth * dpr
+    const targetH = newHeight * dpr
+    if (canvas && newWidth && newHeight && (targetW !== this.canvasWidth || targetH !== this.canvasHeight)) {
+      resizeCanvas(canvas, newWidth, newHeight)
+      this.canvasWidth = canvas.width
+      this.canvasHeight = canvas.height
+      this.onCanvasResized()
+    } else if (this.renderVideoDirectly) {
+      video.style.width = newWidth ? `${newWidth}px` : '100%'
+      video.style.height = newHeight ? `${newHeight}px` : '100%'
+    }
   }
 
   /**
@@ -360,6 +459,8 @@ export default class Video {
   protected onCanplay () {
     const { config } = this
     this.canPlay = true
+    this.resolveReady?.()
+    this.resolveReady = null
 
     try {
       if (this.renderVideoDirectly) {
@@ -443,6 +544,8 @@ export default class Video {
     if (this.destroyed) return
     this.destroyed = true
     this.playRequestId++
+    this.sourceGeneration++
+    this.resumeOnReady = false
     const { config, video, canvas } = this
     let cleanupError: unknown
     const cleanup = (task: () => void) => {
@@ -454,6 +557,8 @@ export default class Video {
     }
 
     cleanup(() => this.cancelDrawFrame())
+    cleanup(() => this.resolveReady?.())
+    this.resolveReady = null
     cleanup(() => this.removeEvent())
     cleanup(() => {
       if (video) {
@@ -473,6 +578,7 @@ export default class Video {
     this.container = null
     this.video = null
     this.canvas = null
+    this.transitionStyle = null
     this.canPlay = false
 
     // 回调最后执行，重入 destroy 或抛错均不会中断资源回收。

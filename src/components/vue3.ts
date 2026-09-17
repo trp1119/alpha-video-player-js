@@ -9,7 +9,7 @@ import {
 } from 'vue'
 import Render from '../index'
 import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE } from '../constants'
-import type { IAlphaAlign, IOrientation, ISide } from '../type'
+import type { IAlphaAlign, IOrientation, ISide, IUpdateConfig } from '../type'
 
 export default defineComponent({
   name: 'AlphaVideoPlayer',
@@ -91,6 +91,7 @@ export default defineComponent({
     }
 
     const play = () => player?.play()
+    const updateConfig = (config: IUpdateConfig) => player?.updateConfig(config)
     const pause = () => player?.pause()
     const reset = () => player?.reset()
     const destroy = () => {
@@ -104,16 +105,44 @@ export default defineComponent({
     const setLoop = (loop: boolean) => player?.setLoop(loop)
     const setPlaybackRate = (rate: number) => player?.setPlaybackRate(rate)
 
-    watch(() => props.src, (v) => v != null && player?.setSrc(v))
-    watch(() => props.muted, (v) => player?.setMute(v))
-    watch(() => props.loop, (v) => player?.setLoop(v))
-    watch(() => props.playbackRate, (v) => player?.setPlaybackRate(v))
+    const currentConfig = (): IUpdateConfig => ({
+      ...(props.src != null ? { src: props.src } : {}),
+      poster: props.poster,
+      width: props.width,
+      height: props.height,
+      crossOrigin: props.crossOrigin,
+      muted: props.muted,
+      loop: props.loop,
+      playbackRate: props.playbackRate,
+      fps: props.fps,
+      orientation: props.orientation,
+      side: props.side,
+      alphaScale: props.alphaScale,
+      alphaAlign: props.alphaAlign,
+      videoFrame: props.videoFrame,
+      debug: props.debug,
+      autoShow: props.autoShow,
+      autoClear: props.autoClear,
+      autoDestroy: props.autoDestroy,
+      autoResize: props.autoResize,
+    })
+
+    watch(
+      () => [
+        props.src, props.poster, props.width, props.height, props.crossOrigin,
+        props.muted, props.loop, props.playbackRate, props.fps, props.orientation,
+        props.side, props.alphaScale, props.alphaAlign, props.videoFrame, props.debug,
+        props.autoShow, props.autoClear, props.autoDestroy, props.autoResize,
+      ],
+      () => player?.updateConfig(currentConfig()),
+    )
 
     onMounted(init)
     onBeforeUnmount(destroy)
 
     expose({
       play,
+      updateConfig,
       pause,
       destroy,
       reset,

@@ -115,6 +115,7 @@ Callbacks: `onInitSuccess`, `onInitError`, `onLoad`, `onCanPlay`, `onPlay`, `onL
 | `playing` | Read-only boolean that reports whether playback is active. |
 | `loop` | Read-only boolean that reports loop state. |
 | `play(config?)` | Starts or resumes playback and returns a `Promise`. The optional config overrides applicable settings. |
+| `updateConfig(config)` | Applies runtime options. Layout/render-mode changes rebuild internal resources while preserving the public player instance. |
 | `pause()` | Pauses playback and stops the frame loop. |
 | `reset()` | Resets playback progress. |
 | `setSrc(src)` | Changes the video source. |
@@ -123,6 +124,22 @@ Callbacks: `onInitSuccess`, `onInitError`, `onLoad`, `onCanPlay`, `onPlay`, `onL
 | `setLoop(loop)` | Changes loop state. |
 | `setPlaybackRate(rate)` | Changes playback speed. |
 | `destroy()` | Releases DOM, canvas, and rendering resources. Do not reuse the instance afterward. |
+
+`updateConfig()` incrementally overlays the supplied fields on the current configuration. Media options, transparent layout coordinates, output dimensions, `fps`, and `videoFrame` update in place; switching between positive `alphaScale` values reuses the same video, canvas, and WebGL context. Native-video source changes, `crossOrigin` changes, and switches between `alphaScale=0` and a positive value use a double-buffered transition: the old output remains visible while the replacement loads off-flow and hidden, then the SDK swaps outputs only after the replacement is playable and its first frame is ready. Active playback resumes automatically. If replacement loading fails, the previous renderer is restored. Internal transitions do not emit `onDestroy`; that callback remains reserved for destroying the public player.
+
+When the player is paused with `autoShow=false`, a prepared replacement stays hidden and the previous frame remains visible until the next `play()` call activates it.
+
+```ts
+player.updateConfig({
+  src: nextVideo.src,
+  alphaScale: nextVideo.alphaScale,
+  orientation: nextVideo.orientation,
+  side: nextVideo.side,
+  alphaAlign: nextVideo.alphaAlign,
+})
+
+await player.play()
+```
 
 `play()` rejects with the browser's original error (for example, a `DOMException` from autoplay restrictions). The current play request also invokes `onError` with that value; requests superseded by pause, source changes, destruction, or a newer play request do not deliver stale error callbacks. Media load/decode failures and frame-rendering errors are delivered through `onError` and then destroy the instance.
 
@@ -136,7 +153,7 @@ Each WebGL player allocates one context on its output canvas. If WebGL returns n
 
 ## Framework components
 
-All component packages expose the same player options except `container`, which the component owns. Their refs expose `play`, `pause`, `destroy`, `reset`, `setSrc`, `setCurrentTime`, `setMute`, `setLoop`, `setPlaybackRate`, and `getPlayer`.
+All component packages expose the same player options except `container`, which the component owns. Runtime prop changes are forwarded through `updateConfig()`, including layout and render-mode changes. Their refs expose `play`, `updateConfig`, `pause`, `destroy`, `reset`, `setSrc`, `setCurrentTime`, `setMute`, `setLoop`, `setPlaybackRate`, and `getPlayer`.
 
 ### Vue 3
 
@@ -206,7 +223,7 @@ export function Effect() {
 }
 ```
 
-The React component also accepts `className` and `style`. Components reactively synchronize changes to `src`, `muted`, `loop`, and `playbackRate`; changing packing options (`orientation`, `side`, `alphaScale`, `alphaAlign`) requires remounting.
+The React component also accepts `className` and `style`. Media, size, and packing props synchronize reactively; switching `alphaScale` among native and transparent modes does not require remounting.
 
 ### TypeScript exports
 

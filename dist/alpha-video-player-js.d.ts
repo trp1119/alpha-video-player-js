@@ -42,18 +42,34 @@ interface IConfig {
     onError?: (e: unknown) => void;
     onDestroy?: () => void;
 }
-type IOptionalConfig = Omit<IConfig, 'container' | 'src'> & Partial<Pick<IConfig, 'container' | 'src'>>;
+/** 运行时可更新配置；container 由现有播放器实例持有，不支持迁移。 */
+type IUpdateConfig = Partial<Omit<IConfig, 'container'>>;
+/** play(config) 的历史参数类型，保留可选 container 以维持类型兼容。 */
+type IOptionalConfig = IUpdateConfig & Partial<Pick<IConfig, 'container'>>;
 type IOrientation = 'landscape' | 'portrait';
 type ISide = 'front' | 'back';
 type IAlphaAlign = 'start' | 'end';
 
 declare class Render {
     private render;
+    private config;
+    private outgoingRender;
+    private outgoingConfig;
+    private transitionWasPlaying;
+    private transitionGeneration;
     constructor(config: IConfig);
+    private createRenderer;
+    private rendererUpdates;
+    private finishTransition;
+    private rollbackTransition;
+    private cancelTransition;
+    private activateTransition;
+    private startTransition;
     private getRenderer;
     get playing(): boolean;
     get loop(): boolean;
     play(config?: IOptionalConfig): Promise<void>;
+    updateConfig(config: IUpdateConfig): void;
     pause(): void;
     destroy(): void;
     reset(): void;
@@ -66,4 +82,4 @@ declare class Render {
 /** 核心类实例类型（`new Render(...)` 的实例），便于业务侧标注 ref / getPlayer() 等 */
 type IAlphaVideoPlayer = InstanceType<typeof Render>;
 
-export { type IAlphaAlign, type IAlphaVideoPlayer, type IConfig, type IOptionalConfig, type IOrientation, type ISide, Render as default };
+export { type IAlphaAlign, type IAlphaVideoPlayer, type IConfig, type IOptionalConfig, type IOrientation, type ISide, type IUpdateConfig, Render as default };

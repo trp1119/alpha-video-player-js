@@ -43,7 +43,11 @@ export interface IConfig {
   onDestroy?: () => void
 }
 
-export type IOptionalConfig = Omit<IConfig, 'container' | 'src'> & Partial<Pick<IConfig, 'container' | 'src'>>
+/** 运行时可更新配置；container 由现有播放器实例持有，不支持迁移。 */
+export type IUpdateConfig = Partial<Omit<IConfig, 'container'>>
+
+/** play(config) 的历史参数类型，保留可选 container 以维持类型兼容。 */
+export type IOptionalConfig = IUpdateConfig & Partial<Pick<IConfig, 'container'>>
 
 export type IOrientation = 'landscape' | 'portrait'
 

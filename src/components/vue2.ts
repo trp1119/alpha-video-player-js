@@ -10,7 +10,7 @@
 import Vue2 from 'vue2'
 import Render from '../index'
 import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE } from '../constants'
-import type { IAlphaAlign, IOrientation, ISide } from '../type'
+import type { IAlphaAlign, IOrientation, ISide, IUpdateConfig } from '../type'
 
 const AlphaVideoPlayer = (Vue2 as any).extend({
   name: 'AlphaVideoPlayer',
@@ -48,10 +48,25 @@ const AlphaVideoPlayer = (Vue2 as any).extend({
     this._destroyPlayer()
   },
   watch: {
-    src(v: string) { if (v != null) (this as any)._player?.setSrc(v) },
-    muted(v: boolean) { (this as any)._player?.setMute(v) },
-    loop(v: boolean) { (this as any)._player?.setLoop(v) },
-    playbackRate(v: number) { (this as any)._player?.setPlaybackRate(v) },
+    src() { (this as any)._syncConfig() },
+    poster() { (this as any)._syncConfig() },
+    width() { (this as any)._syncConfig() },
+    height() { (this as any)._syncConfig() },
+    crossOrigin() { (this as any)._syncConfig() },
+    muted() { (this as any)._syncConfig() },
+    loop() { (this as any)._syncConfig() },
+    playbackRate() { (this as any)._syncConfig() },
+    fps() { (this as any)._syncConfig() },
+    orientation() { (this as any)._syncConfig() },
+    side() { (this as any)._syncConfig() },
+    alphaScale() { (this as any)._syncConfig() },
+    alphaAlign() { (this as any)._syncConfig() },
+    videoFrame() { (this as any)._syncConfig() },
+    debug() { (this as any)._syncConfig() },
+    autoShow() { (this as any)._syncConfig() },
+    autoClear() { (this as any)._syncConfig() },
+    autoDestroy() { (this as any)._syncConfig() },
+    autoResize() { (this as any)._syncConfig() },
   },
   methods: {
     _initPlayer() {
@@ -92,7 +107,36 @@ const AlphaVideoPlayer = (Vue2 as any).extend({
         onDestroy: () => self.$emit('destroy'),
       })
     },
+    _currentConfig(): IUpdateConfig {
+      const self = this as any
+      return {
+        ...(self.src != null ? { src: self.src } : {}),
+        poster: self.poster,
+        width: self.width,
+        height: self.height,
+        crossOrigin: self.crossOrigin,
+        muted: self.muted,
+        loop: self.loop,
+        playbackRate: self.playbackRate,
+        fps: self.fps,
+        orientation: self.orientation as IOrientation,
+        side: self.side as ISide,
+        alphaScale: self.alphaScale,
+        alphaAlign: self.alphaAlign as IAlphaAlign,
+        videoFrame: self.videoFrame,
+        debug: self.debug,
+        autoShow: self.autoShow,
+        autoClear: self.autoClear,
+        autoDestroy: self.autoDestroy,
+        autoResize: self.autoResize,
+      }
+    },
+    _syncConfig() {
+      const self = this as any
+      self._player?.updateConfig(self._currentConfig())
+    },
     play() { return (this as any)._player?.play() },
+    updateConfig(config: IUpdateConfig) { (this as any)._player?.updateConfig(config) },
     pause() { (this as any)._player?.pause() },
     reset() { (this as any)._player?.reset() },
     _destroyPlayer() {

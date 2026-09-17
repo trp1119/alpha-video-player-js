@@ -118,8 +118,7 @@ export default class WebGLRender extends Video {
    */
   private initVertexBuffer () {
     const { gl, program, config } = this
-    const { orientation, side, alphaScale, alphaAlign } = config
-    const coords = computeVertexCoord(orientation, side, alphaScale, alphaAlign)
+    const coords = this.computeVertexCoords(config)
     // 创建缓冲区对象
     const vertexBuffer = gl.createBuffer()
     if (!vertexBuffer) throw new Error('[alpha-video-player-js]: Unable to allocate a WebGL buffer.')
@@ -148,6 +147,23 @@ export default class WebGLRender extends Video {
     gl.uniform1i(u_Sampler, 0)
 
     return vertexBuffer
+  }
+
+  private computeVertexCoords (config: IConfig) {
+    const { orientation, side, alphaScale, alphaAlign } = config
+    return computeVertexCoord(orientation, side, alphaScale, alphaAlign)
+  }
+
+  protected onConfigUpdated (previous: IConfig, next: IConfig) {
+    super.onConfigUpdated(previous, next)
+    if (
+      previous.orientation === next.orientation && previous.side === next.side &&
+      previous.alphaScale === next.alphaScale && previous.alphaAlign === next.alphaAlign
+    ) return
+    if (!this.gl || !this.vertexBuffer) return
+    const coords = this.computeVertexCoords(next)
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer)
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, coords, this.gl.STATIC_DRAW)
   }
   protected onCanvasResized () {
     const { gl, canvas } = this

@@ -1,10 +1,12 @@
 import type { IAlphaVideoPlayer } from './index'
+import type { IUpdateConfig } from './type'
 
 /**
  * Vue 2 / Vue 3 的 template ref、React 的 `useRef` 所指向的命令式 API 形状（与 `expose` / `useImperativeHandle` 一致）。
  */
 export type IAlphaVideoPlayerRef = {
   play: () => Promise<void> | undefined
+  updateConfig: (config: IUpdateConfig) => void
   pause: () => void
   destroy: () => void
   reset: () => void

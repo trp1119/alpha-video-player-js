@@ -45,7 +45,10 @@ interface IConfig {
     onError?: (e: unknown) => void;
     onDestroy?: () => void;
 }
-type IOptionalConfig = Omit<IConfig, 'container' | 'src'> & Partial<Pick<IConfig, 'container' | 'src'>>;
+/** 运行时可更新配置；container 由现有播放器实例持有，不支持迁移。 */
+type IUpdateConfig = Partial<Omit<IConfig, 'container'>>;
+/** play(config) 的历史参数类型，保留可选 container 以维持类型兼容。 */
+type IOptionalConfig = IUpdateConfig & Partial<Pick<IConfig, 'container'>>;
 type IOrientation = 'landscape' | 'portrait';
 type ISide = 'front' | 'back';
 type IAlphaAlign = 'start' | 'end';
@@ -241,11 +244,24 @@ declare const _default: vue.DefineComponent<vue.ExtractPropTypes<{
 
 declare class Render {
     private render;
+    private config;
+    private outgoingRender;
+    private outgoingConfig;
+    private transitionWasPlaying;
+    private transitionGeneration;
     constructor(config: IConfig);
+    private createRenderer;
+    private rendererUpdates;
+    private finishTransition;
+    private rollbackTransition;
+    private cancelTransition;
+    private activateTransition;
+    private startTransition;
     private getRenderer;
     get playing(): boolean;
     get loop(): boolean;
     play(config?: IOptionalConfig): Promise<void>;
+    updateConfig(config: IUpdateConfig): void;
     pause(): void;
     destroy(): void;
     reset(): void;
@@ -263,6 +279,7 @@ type IAlphaVideoPlayer = InstanceType<typeof Render>;
  */
 type IAlphaVideoPlayerRef = {
     play: () => Promise<void> | undefined;
+    updateConfig: (config: IUpdateConfig) => void;
     pause: () => void;
     destroy: () => void;
     reset: () => void;
@@ -274,4 +291,4 @@ type IAlphaVideoPlayerRef = {
     getPlayer: () => IAlphaVideoPlayer | null;
 };
 
-export { type IAlphaVideoPlayer, type IAlphaVideoPlayerRef, _default as default };
+export { type IAlphaVideoPlayer, type IAlphaVideoPlayerRef, type IUpdateConfig, _default as default };

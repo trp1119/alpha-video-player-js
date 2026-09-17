@@ -83,6 +83,7 @@ new AlphaVideoPlayer({
 
 ```ts
 player.play(config?)
+player.updateConfig(config)
 player.pause()
 player.reset()
 player.setSrc(src)
@@ -91,6 +92,22 @@ player.setMute(muted)
 player.setLoop(loop)
 player.setPlaybackRate(rate)
 player.destroy()
+```
+
+`updateConfig()` 会把传入字段增量覆盖到当前配置。媒体属性、透明布局坐标、输出尺寸、`fps` 和 `videoFrame` 均原地更新；正数 `alphaScale` 之间切换会复用同一个 video、Canvas 和 WebGL 上下文。普通视频换源、`crossOrigin` 变化以及 `alphaScale=0` 与正数之间切换时使用双缓冲：旧输出保持可见，新 renderer 在脱离文档流的隐藏状态下加载，确认可播放并准备好首帧后再原子替换；切换前正在播放时会自动续播。新资源加载失败则恢复旧 renderer。内部切换不会触发 `onDestroy`，`onDestroy` 仍只表示公共播放器被真正销毁。
+
+播放器暂停且 `autoShow=false` 时，新 renderer 准备完成后仍保持隐藏，旧画面会保留到下一次调用 `play()` 再完成替换。
+
+```ts
+player.updateConfig({
+  src: nextVideo.src,
+  alphaScale: nextVideo.alphaScale,
+  orientation: nextVideo.orientation,
+  side: nextVideo.side,
+  alphaAlign: nextVideo.alphaAlign,
+})
+
+await player.play()
 ```
 
 `play()` 失败时会 reject 浏览器的原始错误，当前有效请求还会以相同值调用 `onError`。被暂停、换源、销毁或后续播放请求取代的旧请求不再触发过期错误回调。媒体加载、解码、跨域或逐帧渲染失败会通过 `onError` 上报，然后销毁实例。`destroy()` 后不要复用该实例。
@@ -107,7 +124,7 @@ player.destroy()
 
 ## 框架组件
 
-组件入口分别为 `alpha-video-player-js/vue3`、`alpha-video-player-js/vue2` 和 `alpha-video-player-js/react`。组件接收除 `container` 外的全部核心配置，ref 暴露 `play`、`pause`、`destroy`、`reset`、`setSrc`、`setCurrentTime`、`setMute`、`setLoop`、`setPlaybackRate` 与 `getPlayer`。
+组件入口分别为 `alpha-video-player-js/vue3`、`alpha-video-player-js/vue2` 和 `alpha-video-player-js/react`。组件接收除 `container` 外的全部核心配置，运行时 props 变化会通过 `updateConfig()` 自动同步，包括布局与渲染模式切换。ref 暴露 `play`、`updateConfig`、`pause`、`destroy`、`reset`、`setSrc`、`setCurrentTime`、`setMute`、`setLoop`、`setPlaybackRate` 与 `getPlayer`。
 
 ### Vue 3
 
@@ -140,15 +157,15 @@ export function Effect({ src }: { src: string }) {
 }
 ```
 
-React 组件额外支持 `className` 与 `style`。`src`、`muted`、`loop`、`playbackRate` 会响应式同步；`orientation`、`side`、`alphaScale`、`alphaAlign` 变更时需要重新挂载。
+React 组件额外支持 `className` 与 `style`。媒体、尺寸和布局 props 都会响应式同步；`alphaScale` 在 `0`、`0.5`、`1` 等模式之间变化时不需要重新挂载组件。
 
 ## 类型导入
 
 | 导入路径 | 类型 |
 | --- | --- |
-| `alpha-video-player-js` | `IAlphaVideoPlayer`、`IConfig`、`IOptionalConfig`、`IOrientation`、`ISide`、`IAlphaAlign` |
-| `.../vue3`、`.../vue2` | `IAlphaVideoPlayer`、`IAlphaVideoPlayerRef` |
-| `.../react` | `IAlphaVideoPlayerProps`、`IAlphaVideoPlayerRef` |
+| `alpha-video-player-js` | `IAlphaVideoPlayer`、`IConfig`、`IOptionalConfig`、`IUpdateConfig`、`IOrientation`、`ISide`、`IAlphaAlign` |
+| `.../vue3`、`.../vue2` | `IAlphaVideoPlayer`、`IAlphaVideoPlayerRef`、`IUpdateConfig` |
+| `.../react` | `IAlphaVideoPlayerProps`、`IAlphaVideoPlayerRef`、`IUpdateConfig` |
 
 同时使用框架 ref 与核心实例类型时，请从同一个框架子路径导入，避免生成声明文件被拆分解析时的类型不兼容。
 
