@@ -143,6 +143,35 @@ await player.play()
 
 `play()` rejects with the browser's original error (for example, a `DOMException` from autoplay restrictions). The current play request also invokes `onError` with that value; requests superseded by pause, source changes, destruction, or a newer play request do not deliver stale error callbacks. Media load/decode failures and frame-rendering errors are delivered through `onError` and then destroy the instance.
 
+### Operational errors and monitoring
+
+Incorrect call timing uses `AlphaVideoPlayerError` with a stable `code` and the attempted `action`:
+
+| Code | Meaning |
+| --- | --- |
+| `VIDEO_SOURCE_MISSING` | The operation needs a video, but no `src` has been set yet. |
+| `PLAYER_DESTROYED` | The public player or its renderer has already been destroyed and cannot be reused. |
+| `PLAYER_NOT_INITIALIZED` | Renderer initialization failed; inspect the earlier `onInitError` value. |
+
+These operational errors do **not** invoke the player's `onError` callback. Synchronous methods can be handled with `try/catch`; because `play()` is asynchronous, it must be awaited or given a rejection handler:
+
+```ts
+import { isAlphaVideoPlayerError } from 'alpha-video-player-js'
+
+try {
+  player.setMute(true)
+  await player.play()
+} catch (error) {
+  if (isAlphaVideoPlayerError(error)) {
+    if (error.code === 'VIDEO_SOURCE_MISSING') return
+    if (error.code === 'PLAYER_DESTROYED') return
+  }
+  throw error
+}
+```
+
+A handled exception/rejection does not reach the browser's global `error` / `unhandledrejection` hooks, so normal global monitoring will not report it. A monitoring SDK explicitly configured to capture handled exceptions may still record it; filter `AlphaVideoPlayerError` by `code` in that SDK's `beforeSend` hook. Browser playback, media decoding, CORS, and frame-rendering failures are different: they still invoke `onError`, and catching the returned `play()` promise does not cancel reporting performed inside your own `onError` callback.
+
 ### Multiple players on one page
 
 Create each player with its own container (or mount separate framework components). Video elements, callbacks, render resources, and frame loops belong to their instances. Pausing or destroying one player does not stop another. Repeated `play()` calls maintain one frame loop; `pause()`, `setSrc()`, and `destroy()` invalidate pending playback starts. Call `play()` again after changing the source when playback is desired.

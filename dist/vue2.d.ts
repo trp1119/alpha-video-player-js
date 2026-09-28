@@ -52,6 +52,14 @@ type IOrientation = 'landscape' | 'portrait';
 type ISide = 'front' | 'back';
 type IAlphaAlign = 'start' | 'end';
 
+type IAlphaVideoPlayerErrorCode = 'PLAYER_DESTROYED' | 'PLAYER_NOT_INITIALIZED' | 'VIDEO_SOURCE_MISSING';
+declare class AlphaVideoPlayerError extends Error {
+    readonly code: IAlphaVideoPlayerErrorCode;
+    readonly action: string;
+    constructor(code: IAlphaVideoPlayerErrorCode, action: string, message: string);
+}
+declare const isAlphaVideoPlayerError: (error: unknown) => error is AlphaVideoPlayerError;
+
 declare class Render {
     private render;
     private config;
@@ -101,4 +109,4 @@ type IAlphaVideoPlayerRef = {
     getPlayer: () => IAlphaVideoPlayer | null;
 };
 
-export { type IAlphaVideoPlayer, type IAlphaVideoPlayerRef, type IUpdateConfig, AlphaVideoPlayer as default };
+export { AlphaVideoPlayerError, type IAlphaVideoPlayer, type IAlphaVideoPlayerErrorCode, type IAlphaVideoPlayerRef, type IUpdateConfig, AlphaVideoPlayer as default, isAlphaVideoPlayerError };

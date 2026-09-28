@@ -50,6 +50,14 @@ type IOrientation = 'landscape' | 'portrait';
 type ISide = 'front' | 'back';
 type IAlphaAlign = 'start' | 'end';
 
+type IAlphaVideoPlayerErrorCode = 'PLAYER_DESTROYED' | 'PLAYER_NOT_INITIALIZED' | 'VIDEO_SOURCE_MISSING';
+declare class AlphaVideoPlayerError extends Error {
+    readonly code: IAlphaVideoPlayerErrorCode;
+    readonly action: string;
+    constructor(code: IAlphaVideoPlayerErrorCode, action: string, message: string);
+}
+declare const isAlphaVideoPlayerError: (error: unknown) => error is AlphaVideoPlayerError;
+
 declare class Render {
     private render;
     private config;
@@ -82,4 +90,4 @@ declare class Render {
 /** 核心类实例类型（`new Render(...)` 的实例），便于业务侧标注 ref / getPlayer() 等 */
 type IAlphaVideoPlayer = InstanceType<typeof Render>;
 
-export { type IAlphaAlign, type IAlphaVideoPlayer, type IConfig, type IOptionalConfig, type IOrientation, type ISide, type IUpdateConfig, Render as default };
+export { AlphaVideoPlayerError, type IAlphaAlign, type IAlphaVideoPlayer, type IAlphaVideoPlayerErrorCode, type IConfig, type IOptionalConfig, type IOrientation, type ISide, type IUpdateConfig, Render as default, isAlphaVideoPlayerError };

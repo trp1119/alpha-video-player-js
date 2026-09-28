@@ -112,6 +112,35 @@ await player.play()
 
 `play()` 失败时会 reject 浏览器的原始错误，当前有效请求还会以相同值调用 `onError`。被暂停、换源、销毁或后续播放请求取代的旧请求不再触发过期错误回调。媒体加载、解码、跨域或逐帧渲染失败会通过 `onError` 上报，然后销毁实例。`destroy()` 后不要复用该实例。
 
+### 可识别错误与监控过滤
+
+调用时机不正确时会抛出 `AlphaVideoPlayerError`，其中包含稳定的 `code` 和本次操作 `action`：
+
+| 错误码 | 真实原因 |
+| --- | --- |
+| `VIDEO_SOURCE_MISSING` | 当前还没有设置 `src`，但调用的方法需要 video。 |
+| `PLAYER_DESTROYED` | 公共播放器或底层 renderer 已销毁，实例不能继续复用。 |
+| `PLAYER_NOT_INITIALIZED` | renderer 初始化失败，应查看更早的 `onInitError`。 |
+
+这些播放器状态错误不会调用配置中的 `onError`。同步方法可以直接 `try/catch`；`play()` 是异步方法，必须配合 `await`，或显式调用 `.catch()`：
+
+```ts
+import { isAlphaVideoPlayerError } from 'alpha-video-player-js'
+
+try {
+  player.setMute(true)
+  await player.play()
+} catch (error) {
+  if (isAlphaVideoPlayerError(error)) {
+    if (error.code === 'VIDEO_SOURCE_MISSING') return
+    if (error.code === 'PLAYER_DESTROYED') return
+  }
+  throw error
+}
+```
+
+被正确捕获的异常或 Promise rejection 不会进入浏览器全局 `error` / `unhandledrejection`，常规全局监控不会上报。但如果监控 SDK 被配置为采集“已捕获异常”，仍可能记录；可在其 `beforeSend` 等过滤入口按 `AlphaVideoPlayerError.code` 忽略。浏览器播放失败、媒体解码、CORS 和逐帧渲染失败仍会调用 `onError`；业务即使捕获了 `play()` 的 rejection，也不会撤销自己在 `onError` 中执行的监控上报。
+
 ### 同页多实例
 
 每个播放器使用独立容器，或分别挂载框架组件。video、事件、渲染资源和帧循环均归各自实例所有，暂停或销毁一个不会停止另一个。重复调用 `play()` 只保留一个帧循环；`pause()`、`setSrc()`、`destroy()` 会使尚未完成的播放启动请求失效。换源后如需播放，重新调用 `play()`。
@@ -163,9 +192,9 @@ React 组件额外支持 `className` 与 `style`。媒体、尺寸和布局 prop
 
 | 导入路径 | 类型 |
 | --- | --- |
-| `alpha-video-player-js` | `IAlphaVideoPlayer`、`IConfig`、`IOptionalConfig`、`IUpdateConfig`、`IOrientation`、`ISide`、`IAlphaAlign` |
-| `.../vue3`、`.../vue2` | `IAlphaVideoPlayer`、`IAlphaVideoPlayerRef`、`IUpdateConfig` |
-| `.../react` | `IAlphaVideoPlayerProps`、`IAlphaVideoPlayerRef`、`IUpdateConfig` |
+| `alpha-video-player-js` | `AlphaVideoPlayerError`、`isAlphaVideoPlayerError`、`IAlphaVideoPlayerErrorCode`、`IAlphaVideoPlayer`、`IConfig`、`IOptionalConfig`、`IUpdateConfig`、`IOrientation`、`ISide`、`IAlphaAlign` |
+| `.../vue3`、`.../vue2` | 上述错误导出，以及 `IAlphaVideoPlayer`、`IAlphaVideoPlayerRef`、`IUpdateConfig` |
+| `.../react` | 上述错误导出，以及 `IAlphaVideoPlayerProps`、`IAlphaVideoPlayerRef`、`IUpdateConfig` |
 
 同时使用框架 ref 与核心实例类型时，请从同一个框架子路径导入，避免生成声明文件被拆分解析时的类型不兼容。
 

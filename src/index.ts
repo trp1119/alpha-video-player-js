@@ -2,10 +2,13 @@ import WebGLRender from './renderer/webgl-render'
 import CanvasRender from './renderer/canvas-render'
 import NativeVideoRender from './renderer/native-video-render'
 import { initCanvas, resolvePlayerConfig } from './util'
+import { playerDestroyedError, playerNotInitializedError } from './error'
 import type { IConfig, IOptionalConfig, IUpdateConfig } from './type'
 
 export type { IConfig, IOptionalConfig, IUpdateConfig }
 export type { IAlphaAlign, IOrientation, ISide } from './type'
+export { AlphaVideoPlayerError, isAlphaVideoPlayerError } from './error'
+export type { IAlphaVideoPlayerErrorCode } from './error'
 
 type IRenderer = NativeVideoRender | WebGLRender | CanvasRender
 
@@ -164,8 +167,9 @@ export default class Render {
     this.activateTransition(renderer, generation, wasPlaying)
   }
 
-  private getRenderer () {
-    if (!this.render) throw new Error('[alpha-video-player-js]: player is not initialized.')
+  private getRenderer (action = 'use the player') {
+    if (!this.config) throw playerDestroyedError(action)
+    if (!this.render) throw playerNotInitializedError(action)
     return this.render
   }
 
@@ -179,7 +183,7 @@ export default class Render {
 
   public async play (config?: IOptionalConfig) {
     if (config) this.updateConfig(config)
-    const renderer = this.getRenderer()
+    const renderer = this.getRenderer('play')
     const result = await renderer.play()
     if (this.outgoingRender && this.render === renderer) {
       await renderer.whenReady()
@@ -189,7 +193,7 @@ export default class Render {
   }
 
   public updateConfig (config: IUpdateConfig) {
-    if (!this.config) throw new Error('[alpha-video-player-js]: player has been destroyed.')
+    if (!this.config) throw playerDestroyedError('updateConfig')
     let previous = this.config
     const updates = Object.assign({}, config)
     if (updates.src === undefined) delete updates.src
@@ -207,8 +211,8 @@ export default class Render {
         return
       }
       this.config = next
-      this.getRenderer().updateConfig(this.rendererUpdates(next))
-      if (resume) void this.getRenderer().play().catch(() => {})
+      this.getRenderer('updateConfig').updateConfig(this.rendererUpdates(next))
+      if (resume) void this.getRenderer('play').play().catch(() => {})
       return
     }
 
@@ -223,15 +227,15 @@ export default class Render {
       delete rendererConfig.onError
       delete rendererConfig.onDestroy
     }
-    this.getRenderer().updateConfig(rendererConfig)
+    this.getRenderer('updateConfig').updateConfig(rendererConfig)
     if (this.outgoingRender && previous.src !== next.src) {
       const generation = ++this.transitionGeneration
-      this.activateTransition(this.getRenderer(), generation, this.transitionWasPlaying)
+      this.activateTransition(this.getRenderer('updateConfig'), generation, this.transitionWasPlaying)
     }
   }
 
   public pause () {
-    this.getRenderer().pause()
+    this.getRenderer('pause').pause()
     this.outgoingRender?.pause()
   }
 
@@ -249,34 +253,34 @@ export default class Render {
   }
 
   public reset () {
-    this.getRenderer().reset()
+    this.getRenderer('reset').reset()
   }
 
   public setSrc (src: string) {
-    this.getRenderer().setSrc(src)
+    this.getRenderer('setSrc').setSrc(src)
     if (this.config) this.config.src = src
     if (this.outgoingRender) {
       const generation = ++this.transitionGeneration
-      this.activateTransition(this.getRenderer(), generation, this.transitionWasPlaying)
+      this.activateTransition(this.getRenderer('setSrc'), generation, this.transitionWasPlaying)
     }
   }
 
   public setCurrentTime(time: number) {
-    this.getRenderer().setCurrentTime(time)
+    this.getRenderer('setCurrentTime').setCurrentTime(time)
   }
 
   public setMute (muted: boolean) {
-    this.getRenderer().setMute(muted)
+    this.getRenderer('setMute').setMute(muted)
     if (this.config) this.config.muted = muted
   }
 
   public setLoop (loop: boolean) {
-    this.getRenderer().setLoop(loop)
+    this.getRenderer('setLoop').setLoop(loop)
     if (this.config) this.config.loop = loop
   }
 
   public setPlaybackRate (playbackRate: number) {
-    this.getRenderer().setPlaybackRate(playbackRate)
+    this.getRenderer('setPlaybackRate').setPlaybackRate(playbackRate)
     if (this.config) this.config.playbackRate = playbackRate
   }
 }

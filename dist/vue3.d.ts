@@ -132,7 +132,7 @@ declare const _default: vue.DefineComponent<vue.ExtractPropTypes<{
     };
 }>, () => vue.VNode<vue.RendererNode, vue.RendererElement, {
     [key: string]: any;
-}>, {}, {}, {}, vue.ComponentOptionsMixin, vue.ComponentOptionsMixin, ("loop" | "ended" | "error" | "load" | "pause" | "play" | "canPlay" | "initSuccess" | "initError" | "destroy")[], "loop" | "ended" | "error" | "load" | "pause" | "play" | "canPlay" | "initSuccess" | "initError" | "destroy", vue.PublicProps, Readonly<vue.ExtractPropTypes<{
+}>, {}, {}, {}, vue.ComponentOptionsMixin, vue.ComponentOptionsMixin, ("loop" | "play" | "pause" | "ended" | "error" | "load" | "canPlay" | "initSuccess" | "initError" | "destroy")[], "loop" | "play" | "pause" | "ended" | "error" | "load" | "canPlay" | "initSuccess" | "initError" | "destroy", vue.PublicProps, Readonly<vue.ExtractPropTypes<{
     src: {
         type: StringConstructor;
         default: any;
@@ -242,6 +242,14 @@ declare const _default: vue.DefineComponent<vue.ExtractPropTypes<{
     autoResize: false | "width" | "height" | "contain";
 }, {}, {}, {}, string, vue.ComponentProvideOptions, true, {}, any>;
 
+type IAlphaVideoPlayerErrorCode = 'PLAYER_DESTROYED' | 'PLAYER_NOT_INITIALIZED' | 'VIDEO_SOURCE_MISSING';
+declare class AlphaVideoPlayerError extends Error {
+    readonly code: IAlphaVideoPlayerErrorCode;
+    readonly action: string;
+    constructor(code: IAlphaVideoPlayerErrorCode, action: string, message: string);
+}
+declare const isAlphaVideoPlayerError: (error: unknown) => error is AlphaVideoPlayerError;
+
 declare class Render {
     private render;
     private config;
@@ -291,4 +299,4 @@ type IAlphaVideoPlayerRef = {
     getPlayer: () => IAlphaVideoPlayer | null;
 };
 
-export { type IAlphaVideoPlayer, type IAlphaVideoPlayerRef, type IUpdateConfig, _default as default };
+export { AlphaVideoPlayerError, type IAlphaVideoPlayer, type IAlphaVideoPlayerErrorCode, type IAlphaVideoPlayerRef, type IUpdateConfig, _default as default, isAlphaVideoPlayerError };

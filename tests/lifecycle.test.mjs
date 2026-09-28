@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import Render from '../dist/alpha-video-player-js.js'
+import Render, { AlphaVideoPlayerError, isAlphaVideoPlayerError } from '../dist/alpha-video-player-js.js'
 
 // Deterministic DOM/GPU doubles exercise the shipped bundle's resource ownership
 // and async ordering; real device decoding/capacity is intentionally not simulated.
@@ -368,6 +368,66 @@ test('native video instances allocate no canvas or frame callbacks', async () =>
   a.player.destroy()
   assert.equal(b.player.playing, true)
   b.player.destroy()
+})
+
+test('missing source errors identify the operation and can be caught without onError', async () => {
+  const env = environment()
+  let reported = 0
+  const { player } = env.create({ src: undefined, onError: () => reported++ })
+
+  assert.throws(
+    () => player.setMute(false),
+    error => error instanceof AlphaVideoPlayerError &&
+      error.code === 'VIDEO_SOURCE_MISSING' &&
+      error.action === 'setMute' &&
+      /no video source has been set/.test(error.message),
+  )
+
+  let caught
+  try {
+    await player.play()
+  } catch (error) {
+    caught = error
+  }
+  assert.equal(isAlphaVideoPlayerError(caught), true)
+  assert.equal(caught.code, 'VIDEO_SOURCE_MISSING')
+  assert.equal(caught.action, 'play')
+  assert.equal(reported, 0)
+  player.destroy()
+})
+
+test('destroyed player errors are distinct from missing source errors', async () => {
+  const env = environment()
+  const { player } = env.create()
+  player.destroy()
+
+  assert.throws(
+    () => player.pause(),
+    error => isAlphaVideoPlayerError(error) &&
+      error.code === 'PLAYER_DESTROYED' &&
+      error.action === 'pause' &&
+      /player has been destroyed/.test(error.message),
+  )
+  await assert.rejects(
+    player.play(),
+    error => isAlphaVideoPlayerError(error) &&
+      error.code === 'PLAYER_DESTROYED' && error.action === 'play',
+  )
+})
+
+test('initialization failure has a dedicated error code for later API calls', () => {
+  const env = environment({ webgl: false, canvas2d: false })
+  const container = new env.Element('div')
+  const player = new Render({ container, src: 'fixture.mp4', onInitError() {} })
+
+  assert.throws(
+    () => player.setLoop(true),
+    error => isAlphaVideoPlayerError(error) &&
+      error.code === 'PLAYER_NOT_INITIALIZED' &&
+      error.action === 'setLoop' &&
+      /Check onInitError/.test(error.message),
+  )
+  player.destroy()
 })
 
 test('updateConfig applies media options and source without recreating the renderer', () => {
@@ -755,6 +815,11 @@ for (const mode of [{}, { webgl: false }, { alphaScale: 0 }]) {
     assert.equal(document.body.children.length, 0)
     assert.equal(env.pending.size, 0)
     assert.equal(player.playing, false)
+    await assert.rejects(
+      player.play(),
+      error => isAlphaVideoPlayerError(error) &&
+        error.code === 'PLAYER_DESTROYED' && error.action === 'play',
+    )
   })
 }
 
@@ -768,6 +833,11 @@ test('media errors still destroy the player if the onError callback throws', asy
   assert.equal(container.children.length, 0)
   assert.equal(document.body.children.length, 0)
   assert.equal(env.pending.size, 0)
+  assert.throws(
+    () => player.setPlaybackRate(2),
+    error => isAlphaVideoPlayerError(error) &&
+      error.code === 'PLAYER_DESTROYED' && error.action === 'setPlaybackRate',
+  )
 })
 
 test('autoShow frame errors follow the same cleanup path as playback frame errors', () => {

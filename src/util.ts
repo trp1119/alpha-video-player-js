@@ -1,4 +1,5 @@
 import { DEFAULT_ALPHA_ALIGN, DEFAULT_ALPHA_SCALE, DEFAULT_CONFIG, VIDEO_READY_STATE_CURRENT_DATA } from './constants'
+import { playerDestroyedError, videoSourceMissingError } from './error'
 import type { IAlphaAlign, IConfig, IOptionalConfig, IOrientation, ISide } from './type'
 
 interface ILayoutRect {
@@ -201,9 +202,10 @@ export const computeVertexCoord = (
  * 判断视频是否存在
  * @param video 视频
  */
-export const videoExists = (video: HTMLVideoElement) => {
+export const videoExists = (video: HTMLVideoElement, action: string, destroyed = false) => {
+  if (destroyed) throw playerDestroyedError(action)
   if (!video) {
-    throw new Error('[alpha-video-player-js]: setting failed, please instantiate first!')
+    throw videoSourceMissingError(action)
   }
 }
 

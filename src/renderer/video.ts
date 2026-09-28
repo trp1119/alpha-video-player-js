@@ -1,5 +1,6 @@
 import type { IConfig, IOptionalConfig, IUpdateConfig } from '../type'
 import { TRANSPARENT_VIDEO_POSTER } from '../constants'
+import { playerDestroyedError } from '../error'
 import { resizeCanvas, computeDisplayRatio, getDpr, videoExists, getRequestAnimationFrame, getCancelAnimationFrame, resolvePlayerConfig } from '../util'
 
 export default class Video {
@@ -96,7 +97,7 @@ export default class Video {
   }
 
   public updateConfig (config: IUpdateConfig) {
-    if (this.destroyed || !this.config) throw new Error('[alpha-video-player-js]: player has been destroyed.')
+    if (this.destroyed || !this.config) throw playerDestroyedError('updateConfig')
     const previous = this.config
     const wasPlaying = this.playing
     const sourceChanged = config.src !== undefined && config.src !== previous.src
@@ -275,7 +276,7 @@ export default class Video {
    * 播放
    */
   public async play (config?: IOptionalConfig) {
-    videoExists(this.video)
+    videoExists(this.video, 'play', this.destroyed)
     config && this.setConfig(config)
     this.resumeOnReady = false
     const video = this.video
@@ -305,7 +306,7 @@ export default class Video {
    * 暂停播放
    */
   public pause () {
-    videoExists(this.video)
+    videoExists(this.video, 'pause', this.destroyed)
   
     this.playRequestId++
     this.sourceGeneration++
@@ -317,14 +318,15 @@ export default class Video {
    * 重置播放
    */
   public reset () {  
-    this.setCurrentTime(0)
+    videoExists(this.video, 'reset', this.destroyed)
+    this.video.currentTime = 0
   }
   /**
    * 设置播放地址
    * @param playbackRate 倍速
    */
   public setSrc (src: string) {
-    if (this.destroyed) throw new Error('[alpha-video-player-js]: player has been destroyed.')
+    if (this.destroyed) throw playerDestroyedError('setSrc')
     this.playRequestId++
     this.sourceGeneration++
     this.resumeOnReady = false
@@ -350,7 +352,7 @@ export default class Video {
    * 设置播放进度
    */
   public setCurrentTime (time: number) {
-    videoExists(this.video)
+    videoExists(this.video, 'setCurrentTime', this.destroyed)
 
     this.video.currentTime = time
   }
@@ -359,7 +361,7 @@ export default class Video {
    * @param muted 是否静音
    */
   public setMute (muted: boolean) {
-    videoExists(this.video)
+    videoExists(this.video, 'setMute', this.destroyed)
   
     this.video.muted = muted
     if (muted) {
@@ -373,7 +375,7 @@ export default class Video {
    * @param loop 是否循环
    */
   public setLoop (loop: boolean) {
-    videoExists(this.video)
+    videoExists(this.video, 'setLoop', this.destroyed)
   
     this.video.loop = loop
   }
@@ -382,7 +384,7 @@ export default class Video {
    * @param playbackRate 倍速
    */
   public setPlaybackRate (playbackRate: number) {
-    videoExists(this.video)
+    videoExists(this.video, 'setPlaybackRate', this.destroyed)
   
     this.video.playbackRate = playbackRate
   }
