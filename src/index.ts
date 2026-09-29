@@ -153,7 +153,7 @@ export default class Render {
 
     renderer.setOutputTransitioning(true)
     renderer.setOutputVisible(false)
-    const wasPlaying = resumePlayback ?? outgoing.playing
+    const wasPlaying = resumePlayback ?? outgoing.playRequested
     if (wasPlaying) {
       // 内部换挡不应伪装成用户主动暂停，候选激活后仍按新配置正常上报播放事件。
       outgoing.updateConfig({ onPause: undefined })

@@ -205,19 +205,24 @@ for (const alphaScale of [1, 0]) {
   }
 }
 
-test('late play rejection after destruction preserves the original error without callbacks', async () => {
-  const env = environment()
-  let errors = 0
-  const { player, video } = env.create({ onError: () => errors++ })
-  const wait = deferred()
-  video.playResult = wait.promise
-  const playing = player.play()
-  player.destroy()
-  const original = new Error('browser aborted play')
-  wait.reject(original)
-  await assert.rejects(playing, error => error === original)
-  assert.equal(errors, 0)
-})
+for (const alphaScale of [1, 0]) {
+  for (const action of ['pause', 'setSrc', 'destroy']) {
+    test(`alphaScale=${alphaScale}: late play rejection after ${action} is treated as cancellation`, async () => {
+      const env = environment()
+      let errors = 0
+      const { player, video } = env.create({ alphaScale, onError: () => errors++ })
+      const wait = deferred()
+      video.playResult = wait.promise
+      const playing = player.play()
+      if (action === 'setSrc') player.setSrc('next.mp4')
+      else player[action]()
+      wait.reject(new Error('browser aborted play'))
+      assert.equal(await playing, undefined)
+      assert.equal(errors, 0)
+      if (action !== 'destroy') player.destroy()
+    })
+  }
+}
 
 test('stale play completion does not interfere with a newer play request', async () => {
   const env = environment()
@@ -230,6 +235,24 @@ test('stale play completion does not interfere with a newer play request', async
   await player.play()
   wait.resolve()
   await first
+  assert.equal(env.pending.size, 1)
+  assert.equal(player.playing, true)
+  player.destroy()
+})
+
+test('stale play rejection does not report or interfere with a newer play request', async () => {
+  const env = environment()
+  let errors = 0
+  const { player, video } = env.create({ onError: () => errors++ })
+  const wait = deferred()
+  video.playResult = wait.promise
+  const first = player.play()
+  player.pause()
+  video.playResult = Promise.resolve()
+  await player.play()
+  wait.reject(new Error('old play was aborted'))
+  assert.equal(await first, undefined)
+  assert.equal(errors, 0)
   assert.equal(env.pending.size, 1)
   assert.equal(player.playing, true)
   player.destroy()
@@ -473,6 +496,29 @@ test('rapid transparent source updates resume only the latest source', async () 
   player.destroy()
 })
 
+test('source update during a pending play resumes the latest source without reporting the cancelled request', async () => {
+  const env = environment()
+  let errors = 0
+  const { player, video } = env.create({ alphaScale: 1, onError: () => errors++ })
+  const wait = deferred()
+  video.playResult = wait.promise
+  const oldPlay = player.play()
+
+  player.updateConfig({ src: 'next.mp4' })
+  video.playResult = Promise.resolve()
+  video.dispatchEvent(new Event('loadedmetadata'))
+  video.dispatchEvent(new Event('canplaythrough'))
+  wait.reject(new Error('old source was removed'))
+  await oldPlay
+  await flushPromises()
+
+  assert.equal(video.src, 'next.mp4')
+  assert.equal(errors, 0)
+  assert.equal(player.playing, true)
+  assert.equal(env.pending.size, 1)
+  player.destroy()
+})
+
 test('updateConfig switches between transparent layouts without exposing renderer recreation', async () => {
   const env = environment()
   let destroys = 0, inits = 0
@@ -684,7 +730,7 @@ test('renderer replacement invalidates a pending play from the old renderer', as
   const newPlay = player.play()
   nativeVideo.dispatchEvent(new Event('loadedmetadata'))
   nativeVideo.dispatchEvent(new Event('canplaythrough'))
-  wait.resolve()
+  wait.reject(new Error('old renderer was removed'))
   await Promise.all([oldPlay, newPlay])
 
   assert.equal(oldVideo.parentNode, null)

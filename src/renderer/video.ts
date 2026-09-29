@@ -15,6 +15,7 @@ export default class Video {
   private animationId: number | null = null
   private animationGeneration = 0
   private playRequestId = 0
+  private playPending = false
   private sourceGeneration = 0
   private resumeOnReady = false
   private destroyed = false
@@ -50,6 +51,10 @@ export default class Video {
 
   public get loop () {
     return this.video?.loop || false
+  }
+
+  public get playRequested () {
+    return this.playing || this.playPending || this.resumeOnReady
   }
 
   public whenReady () {
@@ -100,8 +105,9 @@ export default class Video {
     if (this.destroyed || !this.config) throw playerDestroyedError('updateConfig')
     const previous = this.config
     const wasPlaying = this.playing
+    const playRequested = this.playRequested
     const sourceChanged = config.src !== undefined && config.src !== previous.src
-    const resumeAfterSourceChange = sourceChanged && (wasPlaying || this.resumeOnReady)
+    const resumeAfterSourceChange = sourceChanged && playRequested
     const frameDriverChanged = (config.fps !== undefined && config.fps !== previous.fps) ||
       (config.videoFrame !== undefined && config.videoFrame !== previous.videoFrame)
     this.setConfig(config)
@@ -281,10 +287,13 @@ export default class Video {
     this.resumeOnReady = false
     const video = this.video
     const requestId = ++this.playRequestId
+    this.playPending = true
   
     try {
       const res = await video.play()
-      if (this.destroyed || requestId !== this.playRequestId || video !== this.video || video.paused || video.ended) return res
+      if (this.destroyed || requestId !== this.playRequestId || video !== this.video) return res
+      this.playPending = false
+      if (video.paused || video.ended) return res
       this.cancelDrawFrame()
       this.playing = true
       if (this.renderVideoDirectly) {
@@ -294,8 +303,11 @@ export default class Video {
       }
       return res
     } catch (error) {
+      // pause / setSrc / destroy 已主动使该请求失效，晚到的浏览器拒绝只是取消结果。
+      if (this.destroyed || requestId !== this.playRequestId || video !== this.video) return
+      this.playPending = false
       try {
-        if (!this.destroyed && requestId === this.playRequestId) this.config?.onError?.(error)
+        this.config?.onError?.(error)
       } finally {
         // 业务回调异常不能替换调用方需要处理的原生播放错误。
         throw error
@@ -309,6 +321,7 @@ export default class Video {
     videoExists(this.video, 'pause', this.destroyed)
   
     this.playRequestId++
+    this.playPending = false
     this.sourceGeneration++
     this.resumeOnReady = false
     this.cancelDrawFrame()
@@ -328,6 +341,7 @@ export default class Video {
   public setSrc (src: string) {
     if (this.destroyed) throw playerDestroyedError('setSrc')
     this.playRequestId++
+    this.playPending = false
     this.sourceGeneration++
     this.resumeOnReady = false
     this.cancelDrawFrame()
@@ -498,6 +512,7 @@ export default class Video {
     const { config } = this
     if (this.video?.paused) {
       this.playRequestId++
+      this.playPending = false
       this.cancelDrawFrame()
     }
     config?.onPause?.()
@@ -508,6 +523,7 @@ export default class Video {
   protected onEnded () {
     const { config, video } = this
     this.playRequestId++
+    this.playPending = false
     video.currentTime = 0
     this.cancelDrawFrame()
     try {
@@ -546,6 +562,7 @@ export default class Video {
     if (this.destroyed) return
     this.destroyed = true
     this.playRequestId++
+    this.playPending = false
     this.sourceGeneration++
     this.resumeOnReady = false
     const { config, video, canvas } = this
